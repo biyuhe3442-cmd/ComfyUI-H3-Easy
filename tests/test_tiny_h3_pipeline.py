@@ -473,3 +473,112 @@ def test_progressive_continuation_lock_audio_latent_method(env):
     for i in (2, 3):
         assert f"第 {i} 段渐进加速（实验）" in result.report
     assert "输出音频：原音频" in result.report
+
+
+def _face_video(frames, height, width, size=24, speed=1.5):
+    """Smooth background plus a bright moving square standing in for a small face, and its mask."""
+    yy = torch.linspace(0, 1, height).view(height, 1, 1)
+    xx = torch.linspace(0, 1, width).view(1, width, 1)
+    base = torch.cat([0.3 + 0.2 * xx.expand(height, width, 1), 0.4 * yy.expand(height, width, 1),
+                      torch.full((height, width, 1), 0.5)], dim=-1)
+    video = base.unsqueeze(0).repeat(frames, 1, 1, 1)
+    mask = torch.zeros(frames, height, width)
+    for f in range(frames):
+        x = int(width * 0.4 + speed * f) % (width - size)
+        y = height // 3
+        video[f, y:y + size, x:x + size] = torch.tensor([0.9, 0.75, 0.65])
+        mask[f, y:y + size, x:x + size] = 1
+    return video, mask
+
+
+def test_face_refine_redraws_only_the_face(env, monkeypatch):
+    from h3easy import refine
+    from h3easy.pipeline import MODE_IMAGE
+    calls = []
+    original = refine._sample
+
+    def spy(model, positive, latent, sigmas, sampler, seed, noise=None, mask=None, x0_store=None):
+        calls.append({"sigmas": len(sigmas), "mask": mask, "latent": latent})
+        return original(model, positive, latent, sigmas, sampler, seed, noise=noise, mask=mask)
+
+    monkeypatch.setattr(refine, "_sample", spy)
+    video, mask = _face_video(60, 320, 512)
+    settings = refine.RefineSettings(mode=MODE_IMAGE, steps=6, strength=0.35, refine_size=128,
+                                     sampler_name="euler", low_vram=False)
+    out, report = refine.refine_video(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(),
+                                      video, _audio(3.0), None, mask)
+    assert out.shape == video.shape and torch.isfinite(out).all()
+    assert "找到 1 张脸" in report and "脸 1：精修完成" in report and "1 个窗口" in report
+    # only the crop around the face changes
+    assert torch.equal(out[:, 250:, :, :], video[:, 250:, :, :])
+    assert (out[:, 100:140] - video[:, 100:140]).abs().max() > 1e-3
+    # partial redraw: only the tail of the schedule runs; audio is kept, video regenerated
+    assert len(calls) == 1 and calls[0]["sigmas"] < 7
+    video_mask, audio_mask = calls[0]["mask"].unbind()
+    assert video_mask.min() == 1 and audio_mask.max() == 0
+    assert calls[0]["latent"].unbind()[0].shape[-2:] == (8, 8)  # 128 / 16
+
+
+def test_face_refine_long_track_uses_exact_continuation(env, monkeypatch):
+    from h3easy import refine
+    from h3easy.pipeline import MODE_IMAGE
+    masks = []
+    original = refine._sample
+
+    def spy(model, positive, latent, sigmas, sampler, seed, noise=None, mask=None, x0_store=None):
+        masks.append(mask)
+        return original(model, positive, latent, sigmas, sampler, seed, noise=noise, mask=mask)
+
+    monkeypatch.setattr(refine, "_sample", spy)
+    video, mask = _face_video(400, 128, 192, size=12, speed=0.1)
+    settings = refine.RefineSettings(mode=MODE_IMAGE, steps=6, strength=0.35, refine_size=64,
+                                     sampler_name="euler", low_vram=False)
+    out, report = refine.refine_video(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(),
+                                      video, None, None, mask)
+    assert torch.isfinite(out).all()
+    assert "2 个窗口" in report
+    first_video_mask, first_audio_mask = masks[0].unbind()
+    second_video_mask, _ = masks[1].unbind()
+    assert first_video_mask.min() == 1 and first_audio_mask.min() == 1  # no audio: soundtrack regenerated
+    assert second_video_mask[:, :, :12].max() == 0 and second_video_mask[:, :, 12:].min() == 1
+
+
+def test_face_refine_skips_large_or_unselected_faces(env):
+    from h3easy import refine
+    from h3easy.pipeline import MODE_IMAGE
+    video, mask = _face_video(30, 320, 512, size=40)
+    base = dict(mode=MODE_IMAGE, steps=6, refine_size=128, sampler_name="euler", low_vram=False)
+    out, report = refine.refine_video(refine.RefineSettings(max_face=32, **base), env["model"], FakeClip(),
+                                      FakeVideoVAE(), FakeAudioVAE(), video, None, None, mask)
+    assert out is video and "已经够大" in report
+    out, report = refine.refine_video(refine.RefineSettings(faces="2", **base), env["model"], FakeClip(),
+                                      FakeVideoVAE(), FakeAudioVAE(), video, None, None, mask)
+    assert out is video and "不在「只修这些脸」里" in report
+
+
+def test_face_refine_reference_mode_with_headshot(env):
+    from h3easy import refine
+    from h3easy.media import Media
+    from h3easy.pipeline import MODE_REFERENCE
+    video, mask = _face_video(30, 320, 512)
+    settings = refine.RefineSettings(mode=MODE_REFERENCE, steps=6, refine_size=128, sampler_name="euler",
+                                     low_vram=False)
+    clip = FakeClip()
+    seen = []
+    tokenize = clip.tokenize
+    clip.tokenize = lambda text, **kw: (seen.append(text), tokenize(text, **kw))[1]
+    out, report = refine.refine_video(settings, env["model"], clip, FakeVideoVAE(), FakeAudioVAE(), video,
+                                      _audio(2.0), Media(ref_images=[torch.rand(1, 256, 256, 3)]), mask)
+    assert torch.isfinite(out).all() and "参考图×1" in report
+    assert any("<Subject 1> is the person whose facial identity comes from" in t for t in seen)
+
+
+def test_face_refine_maps_a_smaller_mask_onto_the_video():
+    from h3easy import refine
+    from h3easy.pipeline import MODE_IMAGE
+    video = torch.zeros(20, 320, 512, 3)
+    mask = torch.zeros(20, 160, 256)
+    mask[:, 40:60, 100:120] = 1  # 20 px at half size -> 40 px on the video
+    settings = refine.RefineSettings(mode=MODE_IMAGE, max_face=32)
+    out, report = refine.refine_video(settings, None, None, None, None, video, None, None, mask)
+    assert out is video and "大小约 40px" in report and "已经够大" in report

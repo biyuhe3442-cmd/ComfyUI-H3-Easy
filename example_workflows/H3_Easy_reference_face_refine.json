@@ -1,0 +1,2318 @@
+{
+  "id": "2f407644-1d6f-4c47-8054-2b21c9e9d461",
+  "revision": 0,
+  "last_node_id": 12,
+  "last_link_id": 15,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "MarkdownNote",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        430,
+        900
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [],
+      "outputs": [],
+      "title": "📖 使用说明（先看这里）",
+      "properties": {},
+      "widgets_values": [
+        "## 参考模式 + 小脸精修 · 使用说明\n\n**这个工作流做两件事**：先用参考模式生成视频（「原视频」），再用「H3 小脸精修」把画面里的小脸放大重画、贴回去（「精修后视频」）。两份都会保存，方便对比。\n\n**1. 放参考图**：在「H3 素材加载器」里按顺序放角色图（第一张是 `<Picture 1>`……）。建议每个角色一张全身图 + 一张大头照，分开放，不要拼在一张图里。\n\n**2. 写提示词**：示例是官方 h3-prompt-writing 的六段结构（英文正文，台词写成 `<d>[Chinese] ...</d>`）。多段时每段一节，`[共用]` 下面的内容会加到每段结尾。\n\n**3. 小脸精修**：\n- 自动检测人脸，只修比「只修小于(px)的脸」小的脸；\n- 每张脸裁出来放大到「精修分辨率」，只重画最后几步（默认 12 步日程里跑 4 步），动作和口型不变；\n- 精修节点在生成之后单独运行：只改精修参数再点运行，**不会重新生成视频**；\n- 报告里会列出每张脸的编号、位置、大小和用时。多个角色想各用各的大头照：复制精修节点，用「只修这些脸」填编号，各接一个只放该角色大头照的素材加载器。\n\n**模型**：这里只用参考模型 ref2va，生成和精修共用，不会加载第二个大模型。\n\n**16G 显卡**：保持低显存模式；第一次先用 段数 2 试。"
+      ],
+      "widgets_values_named": {
+        "text": "## 参考模式 + 小脸精修 · 使用说明\n\n**这个工作流做两件事**：先用参考模式生成视频（「原视频」），再用「H3 小脸精修」把画面里的小脸放大重画、贴回去（「精修后视频」）。两份都会保存，方便对比。\n\n**1. 放参考图**：在「H3 素材加载器」里按顺序放角色图（第一张是 `<Picture 1>`……）。建议每个角色一张全身图 + 一张大头照，分开放，不要拼在一张图里。\n\n**2. 写提示词**：示例是官方 h3-prompt-writing 的六段结构（英文正文，台词写成 `<d>[Chinese] ...</d>`）。多段时每段一节，`[共用]` 下面的内容会加到每段结尾。\n\n**3. 小脸精修**：\n- 自动检测人脸，只修比「只修小于(px)的脸」小的脸；\n- 每张脸裁出来放大到「精修分辨率」，只重画最后几步（默认 12 步日程里跑 4 步），动作和口型不变；\n- 精修节点在生成之后单独运行：只改精修参数再点运行，**不会重新生成视频**；\n- 报告里会列出每张脸的编号、位置、大小和用时。多个角色想各用各的大头照：复制精修节点，用「只修这些脸」填编号，各接一个只放该角色大头照的素材加载器。\n\n**模型**：这里只用参考模型 ref2va，生成和精修共用，不会加载第二个大模型。\n\n**16G 显卡**：保持低显存模式；第一次先用 段数 2 试。"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 2,
+      "type": "UNETLoader",
+      "pos": [
+        470,
+        0
+      ],
+      "size": [
+        380,
+        90
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "unet_name",
+          "locked": null,
+          "name": "unet_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "weight_dtype",
+          "locked": null,
+          "name": "weight_dtype",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "weight_dtype"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "MODEL",
+          "locked": null,
+          "name": "MODEL",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "MODEL",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            1,
+            8
+          ]
+        }
+      ],
+      "title": "参考模型 ref2va",
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    {
+      "id": 3,
+      "type": "CLIPLoader",
+      "pos": [
+        470,
+        120
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "clip_name",
+          "locked": null,
+          "name": "clip_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "type",
+          "locked": null,
+          "name": "type",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "type"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "device",
+          "locked": null,
+          "name": "device",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "CLIP",
+          "locked": null,
+          "name": "CLIP",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "CLIP",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            2,
+            9
+          ]
+        }
+      ],
+      "title": "H3 文本编码器",
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "type": "minimax",
+        "device": "default"
+      }
+    },
+    {
+      "id": 4,
+      "type": "VAELoader",
+      "pos": [
+        470,
+        260
+      ],
+      "size": [
+        380,
+        60
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "vae_name",
+          "locked": null,
+          "name": "vae_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "VAE",
+          "locked": null,
+          "name": "VAE",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            3,
+            10
+          ]
+        }
+      ],
+      "title": "视频 VAE",
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_video_vae_int8_convrot.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+      }
+    },
+    {
+      "id": 5,
+      "type": "VAELoader",
+      "pos": [
+        470,
+        350
+      ],
+      "size": [
+        380,
+        60
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "vae_name",
+          "locked": null,
+          "name": "vae_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "VAE",
+          "locked": null,
+          "name": "VAE",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            4,
+            11
+          ]
+        }
+      ],
+      "title": "音频 VAE",
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+      }
+    },
+    {
+      "id": 6,
+      "type": "H3EasyMediaLoader",
+      "pos": [
+        470,
+        450
+      ],
+      "size": [
+        420,
+        458
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "首帧图",
+          "locked": null,
+          "name": "first_frame",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "first_frame"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "尾帧图",
+          "locked": null,
+          "name": "last_frame",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "last_frame"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图1",
+          "locked": null,
+          "name": "ref_image_1",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_1"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图2",
+          "locked": null,
+          "name": "ref_image_2",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_2"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图3",
+          "locked": null,
+          "name": "ref_image_3",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_3"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图4",
+          "locked": null,
+          "name": "ref_image_4",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_4"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图5",
+          "locked": null,
+          "name": "ref_image_5",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_5"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图6",
+          "locked": null,
+          "name": "ref_image_6",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_6"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图7",
+          "locked": null,
+          "name": "ref_image_7",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_7"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图8",
+          "locked": null,
+          "name": "ref_image_8",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_8"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图9",
+          "locked": null,
+          "name": "ref_image_9",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_9"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频1",
+          "locked": null,
+          "name": "audio_1",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "audio_1"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频2",
+          "locked": null,
+          "name": "audio_2",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "audio_2"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频3",
+          "locked": null,
+          "name": "audio_3",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "audio_3"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频1",
+          "locked": null,
+          "name": "video_1",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_1"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频2",
+          "locked": null,
+          "name": "video_2",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_2"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频3",
+          "locked": null,
+          "name": "video_3",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_3"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "素材",
+          "locked": null,
+          "name": "素材",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "H3_EASY_MEDIA",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3EasyMediaLoader"
+      },
+      "widgets_values": [
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无",
+        "无"
+      ],
+      "widgets_values_named": {
+        "first_frame": "无",
+        "last_frame": "无",
+        "ref_image_1": "无",
+        "ref_image_2": "无",
+        "ref_image_3": "无",
+        "ref_image_4": "无",
+        "ref_image_5": "无",
+        "ref_image_6": "无",
+        "ref_image_7": "无",
+        "ref_image_8": "无",
+        "ref_image_9": "无",
+        "audio_1": "无",
+        "audio_2": "无",
+        "audio_3": "无",
+        "video_1": "无",
+        "video_2": "无",
+        "video_3": "无"
+      }
+    },
+    {
+      "id": 7,
+      "type": "H3EasyGenerate",
+      "pos": [
+        900,
+        0
+      ],
+      "size": [
+        440,
+        900
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "文本编码器",
+          "locked": null,
+          "name": "clip",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "CLIP",
+          "pos": null,
+          "link": 2
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频VAE",
+          "locked": null,
+          "name": "video_vae",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "link": 3
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频VAE",
+          "locked": null,
+          "name": "audio_vae",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "link": 4
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "图文模型(fl2va)",
+          "locked": null,
+          "name": "image_model",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "MODEL",
+          "pos": null,
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考模型(ref2va)",
+          "locked": null,
+          "name": "reference_model",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "MODEL",
+          "pos": null,
+          "link": 1
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "素材",
+          "locked": null,
+          "name": "media",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "H3_EASY_MEDIA",
+          "pos": null,
+          "link": 5
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "学习式upscaler",
+          "locked": null,
+          "name": "learned_upscaler",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "H3_LATENT_UPSCALER",
+          "pos": null,
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "模式",
+          "locked": null,
+          "name": "mode",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "提示词",
+          "locked": null,
+          "name": "prompt",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "段数",
+          "locked": null,
+          "name": "segments",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "segments"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "每段秒数",
+          "locked": null,
+          "name": "segment_seconds",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "segment_seconds"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "宽",
+          "locked": null,
+          "name": "width",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "高",
+          "locked": null,
+          "name": "height",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "步数",
+          "locked": null,
+          "name": "steps",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "种子",
+          "locked": null,
+          "name": "seed",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "锁定音频",
+          "locked": null,
+          "name": "lock_audio",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "lock_audio"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "渐进加速",
+          "locked": null,
+          "name": "progressive",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "progressive"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "TST防闪烁",
+          "locked": null,
+          "name": "tst",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "tst"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "低显存模式",
+          "locked": null,
+          "name": "low_vram",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "low_vram"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "采样器",
+          "locked": null,
+          "name": "sampler_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "调度器",
+          "locked": null,
+          "name": "scheduler",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "加速缩放比例",
+          "locked": null,
+          "name": "progressive_scale",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "progressive_scale"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "切换位置",
+          "locked": null,
+          "name": "progressive_switch",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "progressive_switch"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "放大方式",
+          "locked": null,
+          "name": "upscale_method",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "upscale_method"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "TST强度",
+          "locked": null,
+          "name": "tst_strength",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "tst_strength"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图尺寸",
+          "locked": null,
+          "name": "ref_image_size",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_size"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "续写段渐进（实验）",
+          "locked": null,
+          "name": "progressive_continuation",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "progressive_continuation"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频",
+          "locked": null,
+          "name": "视频",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            6
+          ]
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "画面",
+          "locked": null,
+          "name": "画面",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "IMAGE",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            12
+          ]
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频",
+          "locked": null,
+          "name": "音频",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "AUDIO",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            13
+          ]
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "报告",
+          "locked": null,
+          "name": "报告",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3EasyGenerate"
+      },
+      "widgets_values": [
+        "参考模式（多图 / 视频参考）",
+        "subject_definitions:\n<Subject 1> is the young swordsman in <Picture 1>, with sharp, handsome features, long black hair tied in a high ponytail with a silver hair ornament and loose strands framing his face, wearing a long black robe with gold embroidered patterns over dark navy-blue inner layers, an ornate gold-trimmed pauldron on one shoulder, black leather bracers with gold filigree, a wide brown leather belt with an ornate metal buckle and hanging chains, a sword in a black scabbard with a dark wrapped hilt and a dangling tassel at his left hip, and black knee-high leather boots with gold trim.\n<Subject 2> is the young swordswoman in <Picture 2>, with fair skin, red lips, and long straight black hair in a high ponytail crowned by a silver hairpiece with small hanging ornaments, dangling silver earrings, wearing a white high-collared robe with fine silver embroidery, sheer flowing white outer layers with long translucent sleeves, a light-blue sash and pale-blue skirt panels, and white boots, holding a sword in an ornate light-blue scabbard in her right hand.\n\n[0-8s]\nsummary:\n[reference generation] The target video shows <Subject 1> standing alone in a moonlit bamboo-grove clearing at night, waiting in silence while the wind moves his robe.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] A wide shot opens on a clearing inside a dense bamboo grove under a full moon. Tall green-black bamboo stalks line both sides of the frame, fallen leaves cover the ground, and low mist drifts between the stalks, with faint mountain silhouettes far behind. <Subject 1> stands alone at the center of the clearing in three-quarter view, facing slightly left toward the darkness between the bamboo, his left hand resting on the hilt of the black-scabbarded sword at his left hip. A steady night wind lifts the hem of his long black robe, the gold embroidery catching the moonlight, and sways his high ponytail and the tassel hanging from the sword hilt. The camera pushes in with small amplitude at slow speed, moving from the wide view to a medium-wide shot that frames him from head to knees. His face stays calm and alert; he blinks slowly and turns his head a few degrees toward the left edge of the grove, as if listening. Bamboo leaves rustle overhead and a few loose leaves drift down through the moonlight past his shoulders. By the end of the shot he stands still in medium-wide framing, slightly left of center, looking toward the left side of the grove.\n\n[8-16.5s]\nsummary:\n[reference generation] The shot continues with <Subject 1> waiting in the bamboo clearing as <Subject 2> walks out of the bamboo on the left and stops a few steps away from him.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide framing as the moment before: <Subject 1> stands slightly left of center in the moonlit bamboo clearing, looking toward the left side of the grove, his hand resting on his sword hilt while the wind moves his black robe and ponytail. Soft, unhurried footsteps on dry leaves come from the left. <Subject 2> walks out from between the bamboo stalks at the left edge of the frame, holding her sword in its light-blue scabbard in her right hand. Her sheer white outer layers and long translucent sleeves float behind her in the wind, and the silver crown in her hair glints in the moonlight. The camera trucks right with small amplitude at slow speed and widens slightly so both of them fit in the frame. She walks steadily across the leaf-covered ground toward him, her expression cool and composed, and stops about three steps away, facing him in profile. <Subject 1> does not move; only his eyes follow her. Mist drifts between them at knee height. By the end of the shot the two stand facing each other in a medium-wide two-shot, <Subject 2> on the left and <Subject 1> on the right, both in profile and silent.\n\n[16.5-25s]\nsummary:\n[reference generation] Continuing the face-off in the bamboo clearing, <Subject 1> turns toward <Subject 2> and speaks, and she answers calmly.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide two-shot: <Subject 2> on the left and <Subject 1> on the right face each other in profile in the moonlit bamboo clearing, mist drifting between them. <Subject 1> turns his body fully toward her and lets his hand fall from the sword hilt. The camera pushes in with small amplitude at slow speed toward a medium two-shot that frames both of them from the waist up. <Subject 1> (S1), in a low, calm young male voice at a slow pace, says, <d>[Chinese] 你还是来了。</d> He closes his mouth and holds her gaze. <Subject 2> (S2) keeps her chin level and answers in a clear, cool young female voice at an even pace, <d>[Chinese] 我答应过的事，从不失约。</d> Her lips close at the end of the line, and a faint breeze lifts the loose strands of her ponytail. Both stay still for a moment, moonlight outlining their faces, as bamboo leaves rustle above them. The shot ends on the medium two-shot, the two facing each other in silence.\n\n[25-33.5s]\nsummary:\n[reference generation] In the moonlit bamboo clearing, <Subject 2> and <Subject 1> draw their swords and settle into guard stances facing each other.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium two-shot of <Subject 2> on the left and <Subject 1> on the right facing each other in silence under the moonlight. <Subject 2> shifts her weight back, grips the scabbard in her left hand, and draws her blade with her right hand in one smooth motion; a clean metallic ring sounds as the steel slides free, and moonlight runs along the polished blade. <Subject 1> answers by closing his right hand on the dark wrapped hilt at his left hip and drawing his sword from the black scabbard with a low scraping ring, the tassel swinging. The camera performs a slow arc shot with small amplitude around the pair, moving from her side toward his. Both settle into guard stances about three steps apart, blades raised at chest height and angled toward each other, eyes locked. The wind picks up, pulling her sheer sleeves and his robe hem sideways, and loose bamboo leaves skitter across the ground between their feet. The shot ends on a medium-wide view of both holding their stances, motionless.\n\n[33.5-42s]\nsummary:\n[reference generation] <Subject 2> and <Subject 1> exchange a few measured sword strikes in the bamboo clearing, then leap apart as bamboo leaves swirl around them.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, and white boots are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide view of <Subject 2> and <Subject 1> holding guard stances three steps apart in the bamboo clearing. They step toward each other at the same moment. Their blades meet at chest height with a sharp, ringing clash, and a small spark flashes at the point of contact. The movement is graceful and controlled, at a measured, almost dance-like pace rather than a blur: <Subject 2> turns her wrist and slides her blade along his, <Subject 1> deflects it upward, and she spins away with her sheer sleeves fanning out around her. They trade two more clean strikes, each landing with a bright metallic ring. The camera tracks with small amplitude to keep both of them in the frame. After the third strike, they both leap back and land lightly about four steps apart. The rush of air from their movements lifts the fallen bamboo leaves into a slow swirl that drifts through the moonlight and mist around them. The shot ends with both standing apart, swords lowered to their sides, breathing evenly, leaves still floating down between them.\n\n[42-50.5s]\nsummary:\n[reference generation] In the bamboo clearing, <Subject 1> sheathes his sword and compliments <Subject 2>, who sheathes hers and hides a small smile.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same view of <Subject 2> and <Subject 1> standing four steps apart with their swords lowered, bamboo leaves still drifting down between them. <Subject 1> slides his sword back into the black scabbard at his left hip with a soft click, and the corner of his mouth lifts into a faint smile. The camera pushes in with small amplitude at slow speed to a medium two-shot. <Subject 1> (S1), in a low, calm young male voice with a hint of warmth, says, <d>[Chinese] 你的剑法又精进了。</d> He closes his mouth and watches her. <Subject 2> returns her blade to the light-blue scabbard with a light metallic click, then turns her head slightly away from him; the corners of her lips curve into a small smile she tries to hide, and she does not speak. Moonlight catches the silver crown in her hair as a breeze moves her sheer sleeves. The shot ends on the medium two-shot, both relaxed, the tension gone.\n\n[50.5-59s]\nsummary:\n[reference generation] <Subject 1> and <Subject 2> stand side by side and look up at the full moon as the camera rises away from the bamboo clearing.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, high ponytail with silver crown, white robe with sheer layers, light-blue sash and skirt panels, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium two-shot of <Subject 1> and <Subject 2> standing relaxed in the moonlit bamboo clearing after sheathing their swords. <Subject 2> steps beside <Subject 1>, and the two stand side by side, shoulders nearly touching, his black robe beside her white and pale-blue layers. They both lift their gaze to the full moon above the bamboo. The camera pedestals up and pulls out with large amplitude at slow speed, rising above the clearing until the two figures are small at the center of the frame, surrounded by tall bamboo swaying in the wind. Low mist spreads slowly across the clearing and through the stalks, and the moon glows behind thin clouds. The final frames hold on a wide, high view of the silent clearing, the two figures standing still together under the moonlight.\n\n[共用]\noverall_soundscape:\nA steady night wind rustles through the bamboo leaves throughout, with faint distant insects and the soft creak of swaying bamboo stalks. Fabric flutters with each movement, and dry leaves crunch softly underfoot.\n\nnon_diegetic_music:\nA sparse guqin melody at a slow, steady tempo over a soft sustained low string drone, keeping a constant, quiet volume throughout.",
+        2,
+        8,
+        1024,
+        576,
+        20,
+        0,
+        "randomize",
+        true,
+        true,
+        false,
+        true,
+        "res_multistep",
+        "simple",
+        0.7,
+        0.35,
+        "像素放大（推荐）",
+        0.2,
+        "match",
+        false
+      ],
+      "widgets_values_named": {
+        "mode": "参考模式（多图 / 视频参考）",
+        "prompt": "subject_definitions:\n<Subject 1> is the young swordsman in <Picture 1>, with sharp, handsome features, long black hair tied in a high ponytail with a silver hair ornament and loose strands framing his face, wearing a long black robe with gold embroidered patterns over dark navy-blue inner layers, an ornate gold-trimmed pauldron on one shoulder, black leather bracers with gold filigree, a wide brown leather belt with an ornate metal buckle and hanging chains, a sword in a black scabbard with a dark wrapped hilt and a dangling tassel at his left hip, and black knee-high leather boots with gold trim.\n<Subject 2> is the young swordswoman in <Picture 2>, with fair skin, red lips, and long straight black hair in a high ponytail crowned by a silver hairpiece with small hanging ornaments, dangling silver earrings, wearing a white high-collared robe with fine silver embroidery, sheer flowing white outer layers with long translucent sleeves, a light-blue sash and pale-blue skirt panels, and white boots, holding a sword in an ornate light-blue scabbard in her right hand.\n\n[0-8s]\nsummary:\n[reference generation] The target video shows <Subject 1> standing alone in a moonlit bamboo-grove clearing at night, waiting in silence while the wind moves his robe.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] A wide shot opens on a clearing inside a dense bamboo grove under a full moon. Tall green-black bamboo stalks line both sides of the frame, fallen leaves cover the ground, and low mist drifts between the stalks, with faint mountain silhouettes far behind. <Subject 1> stands alone at the center of the clearing in three-quarter view, facing slightly left toward the darkness between the bamboo, his left hand resting on the hilt of the black-scabbarded sword at his left hip. A steady night wind lifts the hem of his long black robe, the gold embroidery catching the moonlight, and sways his high ponytail and the tassel hanging from the sword hilt. The camera pushes in with small amplitude at slow speed, moving from the wide view to a medium-wide shot that frames him from head to knees. His face stays calm and alert; he blinks slowly and turns his head a few degrees toward the left edge of the grove, as if listening. Bamboo leaves rustle overhead and a few loose leaves drift down through the moonlight past his shoulders. By the end of the shot he stands still in medium-wide framing, slightly left of center, looking toward the left side of the grove.\n\n[8-16.5s]\nsummary:\n[reference generation] The shot continues with <Subject 1> waiting in the bamboo clearing as <Subject 2> walks out of the bamboo on the left and stops a few steps away from him.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide framing as the moment before: <Subject 1> stands slightly left of center in the moonlit bamboo clearing, looking toward the left side of the grove, his hand resting on his sword hilt while the wind moves his black robe and ponytail. Soft, unhurried footsteps on dry leaves come from the left. <Subject 2> walks out from between the bamboo stalks at the left edge of the frame, holding her sword in its light-blue scabbard in her right hand. Her sheer white outer layers and long translucent sleeves float behind her in the wind, and the silver crown in her hair glints in the moonlight. The camera trucks right with small amplitude at slow speed and widens slightly so both of them fit in the frame. She walks steadily across the leaf-covered ground toward him, her expression cool and composed, and stops about three steps away, facing him in profile. <Subject 1> does not move; only his eyes follow her. Mist drifts between them at knee height. By the end of the shot the two stand facing each other in a medium-wide two-shot, <Subject 2> on the left and <Subject 1> on the right, both in profile and silent.\n\n[16.5-25s]\nsummary:\n[reference generation] Continuing the face-off in the bamboo clearing, <Subject 1> turns toward <Subject 2> and speaks, and she answers calmly.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide two-shot: <Subject 2> on the left and <Subject 1> on the right face each other in profile in the moonlit bamboo clearing, mist drifting between them. <Subject 1> turns his body fully toward her and lets his hand fall from the sword hilt. The camera pushes in with small amplitude at slow speed toward a medium two-shot that frames both of them from the waist up. <Subject 1> (S1), in a low, calm young male voice at a slow pace, says, <d>[Chinese] 你还是来了。</d> He closes his mouth and holds her gaze. <Subject 2> (S2) keeps her chin level and answers in a clear, cool young female voice at an even pace, <d>[Chinese] 我答应过的事，从不失约。</d> Her lips close at the end of the line, and a faint breeze lifts the loose strands of her ponytail. Both stay still for a moment, moonlight outlining their faces, as bamboo leaves rustle above them. The shot ends on the medium two-shot, the two facing each other in silence.\n\n[25-33.5s]\nsummary:\n[reference generation] In the moonlit bamboo clearing, <Subject 2> and <Subject 1> draw their swords and settle into guard stances facing each other.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium two-shot of <Subject 2> on the left and <Subject 1> on the right facing each other in silence under the moonlight. <Subject 2> shifts her weight back, grips the scabbard in her left hand, and draws her blade with her right hand in one smooth motion; a clean metallic ring sounds as the steel slides free, and moonlight runs along the polished blade. <Subject 1> answers by closing his right hand on the dark wrapped hilt at his left hip and drawing his sword from the black scabbard with a low scraping ring, the tassel swinging. The camera performs a slow arc shot with small amplitude around the pair, moving from her side toward his. Both settle into guard stances about three steps apart, blades raised at chest height and angled toward each other, eyes locked. The wind picks up, pulling her sheer sleeves and his robe hem sideways, and loose bamboo leaves skitter across the ground between their feet. The shot ends on a medium-wide view of both holding their stances, motionless.\n\n[33.5-42s]\nsummary:\n[reference generation] <Subject 2> and <Subject 1> exchange a few measured sword strikes in the bamboo clearing, then leap apart as bamboo leaves swirl around them.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, and white boots are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium-wide view of <Subject 2> and <Subject 1> holding guard stances three steps apart in the bamboo clearing. They step toward each other at the same moment. Their blades meet at chest height with a sharp, ringing clash, and a small spark flashes at the point of contact. The movement is graceful and controlled, at a measured, almost dance-like pace rather than a blur: <Subject 2> turns her wrist and slides her blade along his, <Subject 1> deflects it upward, and she spins away with her sheer sleeves fanning out around her. They trade two more clean strikes, each landing with a bright metallic ring. The camera tracks with small amplitude to keep both of them in the frame. After the third strike, they both leap back and land lightly about four steps apart. The rush of air from their movements lifts the fallen bamboo leaves into a slow swirl that drifts through the moonlight and mist around them. The shot ends with both standing apart, swords lowered to their sides, breathing evenly, leaves still floating down between them.\n\n[42-50.5s]\nsummary:\n[reference generation] In the bamboo clearing, <Subject 1> sheathes his sword and compliments <Subject 2>, who sheathes hers and hides a small smile.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same view of <Subject 2> and <Subject 1> standing four steps apart with their swords lowered, bamboo leaves still drifting down between them. <Subject 1> slides his sword back into the black scabbard at his left hip with a soft click, and the corner of his mouth lifts into a faint smile. The camera pushes in with small amplitude at slow speed to a medium two-shot. <Subject 1> (S1), in a low, calm young male voice with a hint of warmth, says, <d>[Chinese] 你的剑法又精进了。</d> He closes his mouth and watches her. <Subject 2> returns her blade to the light-blue scabbard with a light metallic click, then turns her head slightly away from him; the corners of her lips curve into a small smile she tries to hide, and she does not speak. Moonlight catches the silver crown in her hair as a breeze moves her sheer sleeves. The shot ends on the medium two-shot, both relaxed, the tension gone.\n\n[50.5-59s]\nsummary:\n[reference generation] <Subject 1> and <Subject 2> stand side by side and look up at the full moon as the camera rises away from the bamboo clearing.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword, and boots are retained.\n<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, high ponytail with silver crown, white robe with sheer layers, light-blue sash and skirt panels, and light-blue scabbard are retained.\n\ndetailed_description:\nThe target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.\n[Shot 1] The shot opens on the same medium two-shot of <Subject 1> and <Subject 2> standing relaxed in the moonlit bamboo clearing after sheathing their swords. <Subject 2> steps beside <Subject 1>, and the two stand side by side, shoulders nearly touching, his black robe beside her white and pale-blue layers. They both lift their gaze to the full moon above the bamboo. The camera pedestals up and pulls out with large amplitude at slow speed, rising above the clearing until the two figures are small at the center of the frame, surrounded by tall bamboo swaying in the wind. Low mist spreads slowly across the clearing and through the stalks, and the moon glows behind thin clouds. The final frames hold on a wide, high view of the silent clearing, the two figures standing still together under the moonlight.\n\n[共用]\noverall_soundscape:\nA steady night wind rustles through the bamboo leaves throughout, with faint distant insects and the soft creak of swaying bamboo stalks. Fabric flutters with each movement, and dry leaves crunch softly underfoot.\n\nnon_diegetic_music:\nA sparse guqin melody at a slow, steady tempo over a soft sustained low string drone, keeping a constant, quiet volume throughout.",
+        "segments": 2,
+        "segment_seconds": 8,
+        "width": 1024,
+        "height": 576,
+        "steps": 20,
+        "seed": 0,
+        "control_after_generate": "randomize",
+        "lock_audio": true,
+        "progressive": true,
+        "tst": false,
+        "low_vram": true,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "progressive_scale": 0.7,
+        "progressive_switch": 0.35,
+        "upscale_method": "像素放大（推荐）",
+        "tst_strength": 0.2,
+        "ref_image_size": "match",
+        "progressive_continuation": false
+      },
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 8,
+      "type": "SaveVideo",
+      "pos": [
+        1380,
+        0
+      ],
+      "size": [
+        480,
+        420
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "link": 6
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "filename_prefix",
+          "locked": null,
+          "name": "filename_prefix",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "format.codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format.codec"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "format",
+          "locked": null,
+          "name": "format",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        }
+      ],
+      "title": "保存原视频",
+      "properties": {},
+      "widgets_values": [
+        "video/H3_Easy_original",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "video/H3_Easy_original",
+        "format": "auto",
+        "format.codec": "auto",
+        "codec": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "type": "PreviewAny",
+      "pos": [
+        1380,
+        460
+      ],
+      "size": [
+        480,
+        260
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "source",
+          "locked": null,
+          "name": "source",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "*",
+          "pos": null,
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "STRING",
+          "locked": null,
+          "name": "STRING",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        }
+      ],
+      "title": "生成报告",
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    },
+    {
+      "id": 10,
+      "type": "H3EasyFaceRefine",
+      "pos": [
+        1900,
+        0
+      ],
+      "size": [
+        420,
+        640
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "模型",
+          "locked": null,
+          "name": "model",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "MODEL",
+          "pos": null,
+          "link": 8
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "文本编码器",
+          "locked": null,
+          "name": "clip",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "CLIP",
+          "pos": null,
+          "link": 9
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频VAE",
+          "locked": null,
+          "name": "video_vae",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "link": 10
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频VAE",
+          "locked": null,
+          "name": "audio_vae",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VAE",
+          "pos": null,
+          "link": 11
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "画面",
+          "locked": null,
+          "name": "images",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "IMAGE",
+          "pos": null,
+          "link": 12
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频",
+          "locked": null,
+          "name": "audio",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "AUDIO",
+          "pos": null,
+          "link": 13
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图（可选）",
+          "locked": null,
+          "name": "media",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "H3_EASY_MEDIA",
+          "pos": null,
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "人脸遮罩（可选）",
+          "locked": null,
+          "name": "mask",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "MASK",
+          "pos": null,
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "模型类型",
+          "locked": null,
+          "name": "mode",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "提示词",
+          "locked": null,
+          "name": "prompt",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "只修这些脸",
+          "locked": null,
+          "name": "faces",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "faces"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "只修小于(px)的脸",
+          "locked": null,
+          "name": "max_face",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "max_face"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "精修分辨率",
+          "locked": null,
+          "name": "refine_size",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "refine_size"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "日程步数",
+          "locked": null,
+          "name": "steps",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "重画强度",
+          "locked": null,
+          "name": "strength",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "种子",
+          "locked": null,
+          "name": "seed",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "低显存模式",
+          "locked": null,
+          "name": "low_vram",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "low_vram"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "采样器",
+          "locked": null,
+          "name": "sampler_name",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "调度器",
+          "locked": null,
+          "name": "scheduler",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "裁剪范围",
+          "locked": null,
+          "name": "context",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "context"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "边缘羽化",
+          "locked": null,
+          "name": "feather",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "feather"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "检测阈值",
+          "locked": null,
+          "name": "detect_score",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "detect_score"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "参考图尺寸",
+          "locked": null,
+          "name": "ref_image_size",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "ref_image_size"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频",
+          "locked": null,
+          "name": "视频",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            14
+          ]
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "画面",
+          "locked": null,
+          "name": "画面",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "IMAGE",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "报告",
+          "locked": null,
+          "name": "报告",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3EasyFaceRefine"
+      },
+      "widgets_values": [
+        "参考模式（多图 / 视频参考）",
+        "",
+        "",
+        128,
+        "384",
+        12,
+        0.35,
+        0,
+        "randomize",
+        true,
+        "res_multistep",
+        "simple",
+        2.2,
+        0.15,
+        0.6,
+        "match"
+      ],
+      "widgets_values_named": {
+        "mode": "参考模式（多图 / 视频参考）",
+        "prompt": "",
+        "faces": "",
+        "max_face": 128,
+        "refine_size": "384",
+        "steps": 12,
+        "strength": 0.35,
+        "seed": 0,
+        "control_after_generate": "randomize",
+        "low_vram": true,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "context": 2.2,
+        "feather": 0.15,
+        "detect_score": 0.6,
+        "ref_image_size": "match"
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 11,
+      "type": "SaveVideo",
+      "pos": [
+        2360,
+        0
+      ],
+      "size": [
+        480,
+        420
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "link": 14
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "filename_prefix",
+          "locked": null,
+          "name": "filename_prefix",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "format.codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format.codec"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "format",
+          "locked": null,
+          "name": "format",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        }
+      ],
+      "title": "保存精修后视频",
+      "properties": {},
+      "widgets_values": [
+        "video/H3_Easy_face_refined",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "video/H3_Easy_face_refined",
+        "format": "auto",
+        "format.codec": "auto",
+        "codec": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "type": "PreviewAny",
+      "pos": [
+        2360,
+        460
+      ],
+      "size": [
+        480,
+        260
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "source",
+          "locked": null,
+          "name": "source",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "*",
+          "pos": null,
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "STRING",
+          "locked": null,
+          "name": "STRING",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        }
+      ],
+      "title": "精修报告",
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      7,
+      4,
+      "MODEL"
+    ],
+    [
+      2,
+      3,
+      0,
+      7,
+      0,
+      "CLIP"
+    ],
+    [
+      3,
+      4,
+      0,
+      7,
+      1,
+      "VAE"
+    ],
+    [
+      4,
+      5,
+      0,
+      7,
+      2,
+      "VAE"
+    ],
+    [
+      5,
+      6,
+      0,
+      7,
+      5,
+      "H3_EASY_MEDIA"
+    ],
+    [
+      6,
+      7,
+      0,
+      8,
+      0,
+      "VIDEO"
+    ],
+    [
+      7,
+      7,
+      3,
+      9,
+      0,
+      "STRING"
+    ],
+    [
+      8,
+      2,
+      0,
+      10,
+      0,
+      "MODEL"
+    ],
+    [
+      9,
+      3,
+      0,
+      10,
+      1,
+      "CLIP"
+    ],
+    [
+      10,
+      4,
+      0,
+      10,
+      2,
+      "VAE"
+    ],
+    [
+      11,
+      5,
+      0,
+      10,
+      3,
+      "VAE"
+    ],
+    [
+      12,
+      7,
+      1,
+      10,
+      4,
+      "IMAGE"
+    ],
+    [
+      13,
+      7,
+      2,
+      10,
+      5,
+      "AUDIO"
+    ],
+    [
+      14,
+      10,
+      0,
+      11,
+      0,
+      "VIDEO"
+    ],
+    [
+      15,
+      10,
+      2,
+      12,
+      0,
+      "STRING"
+    ]
+  ],
+  "floatingLinks": null,
+  "groups": [],
+  "definitions": null,
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6,
+      "offset": [
+        40,
+        60
+      ]
+    },
+    "reroutes": null
+  },
+  "version": 0.4
+}

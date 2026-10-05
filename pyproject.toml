@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-h3-easy"
 version = "0.1.0"
-description = "One-node MiniMax H3 video+audio generation for ComfyUI: text/first-last-frame and reference modes, audio lock, multi-segment continuation, progressive speed-up, TST."
+description = "One-node MiniMax H3 video+audio generation for ComfyUI: text/first-last-frame and reference modes, audio lock, multi-segment continuation, progressive speed-up, TST, small-face refine."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
