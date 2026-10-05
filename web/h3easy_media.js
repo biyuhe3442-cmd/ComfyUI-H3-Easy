@@ -12,6 +12,7 @@ const MODE_REFERENCE = "参考模式（多图 / 视频参考）";
 const NONE = "无";
 const LIMIT = { image: 9, video: 3, audio: 3 };
 const VIDEO_READ_SECONDS = 15;
+const MIN_WIDTH = 360;
 
 const FRAMES = [["first_frame", "首帧"], ["last_frame", "尾帧"]];
 const REFS = Array.from({ length: LIMIT.image }, (_, i) => `ref_image_${i + 1}`);
@@ -26,42 +27,45 @@ const ACCEPT = {
 const DROP_KINDS = { image: ["image"], audio: ["audio", "video"], video: ["video"] };
 
 const STYLE = `
-.h3e-panel{box-sizing:border-box;width:100%;font:12px/1.4 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--input-text,#ddd);user-select:none}
-.h3e-inner{display:flex;flex-direction:column;gap:10px;padding:4px 8px 8px}
+.h3e-panel{box-sizing:border-box;width:100%;max-width:100%;overflow:hidden;font:12px/1.4 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--input-text,#ddd);user-select:none}
+.h3e-inner{display:flex;flex-direction:column;gap:10px;padding:4px 8px 8px;min-width:0}
 .h3e-modebar{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--descrip-text,#999)}
-.h3e-pill{padding:1px 8px;border-radius:10px;background:#2b5a8a;color:#fff;font-weight:600}
+.h3e-pill{flex-shrink:0;white-space:nowrap;padding:1px 8px;border-radius:10px;background:#2b5a8a;color:#fff;font-weight:600}
 .h3e-pill.h3e-ref{background:#6b3f8a}
 .h3e-pill.h3e-all{background:#555}
-.h3e-section{display:flex;flex-direction:column;gap:6px}
+.h3e-section{display:flex;flex-direction:column;gap:6px;min-width:0}
 .h3e-head{display:flex;align-items:baseline;gap:8px}
 .h3e-title{font-weight:600;font-size:13px;white-space:nowrap;flex-shrink:0}
 .h3e-hint{color:var(--descrip-text,#999);font-size:11px}
-.h3e-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.h3e-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.h3e-card{position:relative;border:1px dashed var(--border-color,#555);border-radius:8px;background:var(--comfy-input-bg,#222);overflow:hidden;cursor:pointer;
+.h3e-rows{display:flex;flex-direction:column;gap:6px}
+.h3e-jrow{display:flex;gap:6px;align-items:flex-start}
+.h3e-jrow>*{min-width:0}
+.h3e-card{position:relative;box-sizing:border-box;min-width:0;min-height:0;border:1px dashed var(--border-color,#555);border-radius:8px;background:var(--comfy-input-bg,#222);overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;color:var(--descrip-text,#999);transition:border-color .15s,background .15s}
 .h3e-card:hover,.h3e-over{border-color:#4a9eff!important;background:rgba(74,158,255,.08)}
 .h3e-filled{border-style:solid}
-.h3e-frame{aspect-ratio:16/10}
-.h3e-square{aspect-ratio:1/1}
-.h3e-wide{aspect-ratio:16/10}
-.h3e-card img,.h3e-card video{width:100%;height:100%;object-fit:contain;background:#111;display:block;pointer-events:none}
+.h3e-card img,.h3e-card video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#111;display:block;pointer-events:none}
 .h3e-aspects{display:flex;flex-direction:column;gap:4px}
 .h3e-aspect{font-size:11px;color:var(--descrip-text,#aaa);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .h3e-aspect.h3e-bad{color:#f0b35a}
 .h3e-aspect.h3e-good{color:#7fd17f}
 .h3e-fit{border:1px solid #4a9eff;background:rgba(74,158,255,.15);color:#cfe3ff;border-radius:6px;padding:1px 8px;cursor:pointer;font:inherit;font-size:11px}
 .h3e-fit:hover{background:rgba(74,158,255,.3)}
-.h3e-empty{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;padding:4px}
+.h3e-empty{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;padding:4px;min-width:0;overflow-wrap:anywhere}
 .h3e-plus{font-size:20px;line-height:1;opacity:.8}
 .h3e-add-row{min-height:38px;flex-direction:row;gap:6px}
+.h3e-add-row .h3e-empty{flex-direction:row;gap:6px}
+.h3e-add-tall{min-height:72px}
 .h3e-add-row .h3e-plus{font-size:16px}
 .h3e-badge{position:absolute;left:4px;bottom:4px;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;max-width:calc(100% - 16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .h3e-tag{cursor:copy}
+.h3e-card,.h3e-vitem{container-type:inline-size}
+.h3e-short{display:none}
+@container (max-width:96px){.h3e-tag .h3e-long{display:none}.h3e-tag .h3e-short{display:inline}}
 .h3e-tag:hover{background:#2b5a8a}
 .h3e-warn{color:#f0b35a}
 .h3e-vitem{display:flex;flex-direction:column;gap:3px;min-width:0}
-.h3e-caption{display:flex;flex-wrap:wrap;gap:3px;align-items:center;font-size:10px;color:var(--descrip-text,#aaa)}
+.h3e-caption{display:flex;flex-wrap:wrap;gap:3px;align-items:center;font-size:10px;color:var(--descrip-text,#aaa);overflow:hidden}
 .h3e-caption .h3e-chip{font-size:10px;padding:0 5px}
 .h3e-x{position:absolute;right:4px;top:4px;width:20px;height:20px;border-radius:10px;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:13px;line-height:20px;text-align:center;cursor:pointer;padding:0;z-index:2}
 .h3e-x:hover{background:#d33}
@@ -103,10 +107,11 @@ function findWidget(node, name) {
 function hideWidget(widget) {
     if (!widget || widget.__h3eHidden) return;
     widget.__h3eHidden = true;
+    // ``hidden`` is what both the canvas and the "Nodes 2.0" (Vue) renderer check. Do not
+    // retype the widget as "converted-widget": the Vue renderer keeps an empty row for those.
     widget.hidden = true;
     widget.options ||= {};
     widget.options.hidden = true;
-    widget.type = "converted-widget";
     widget.computeSize = () => [0, -4];
 }
 
@@ -194,21 +199,64 @@ function mediaInfo(name, onReady) {
     return null;
 }
 
+// natural pixel size of an input image or video: {w, h}, null when unreadable or still loading
 const SIZES = new Map();
-function imageSize(name, onReady) {
-    if (SIZES.has(name)) {
-        const size = SIZES.get(name);
-        return size === "pending" ? null : size;
+function mediaSize(name, kind, onReady) {
+    const known = SIZES.get(name);
+    if (known instanceof Promise) {
+        known.then(onReady);
+        return null;
     }
-    SIZES.set(name, "pending");
-    const img = new Image();
-    img.onload = () => {
-        SIZES.set(name, { w: img.naturalWidth, h: img.naturalHeight });
-        onReady();
-    };
-    img.onerror = () => SIZES.set(name, null);
-    img.src = viewUrl(name);
+    if (known !== undefined) return known;
+    const pending = new Promise((resolve) => {
+        const done = (size) => {
+            SIZES.set(name, size);
+            resolve(size);
+        };
+        if (kind === "video") {
+            const video = document.createElement("video");
+            video.preload = "metadata";
+            video.muted = true;
+            const finish = (size) => {
+                video.removeAttribute("src");  // let the browser drop the connection
+                video.load();
+                done(size);
+            };
+            video.onloadedmetadata = () => finish(video.videoWidth && video.videoHeight ? { w: video.videoWidth, h: video.videoHeight } : null);
+            video.onerror = () => finish(null);
+            video.src = viewUrl(name);
+        } else {
+            const img = new Image();
+            img.onload = () => done({ w: img.naturalWidth, h: img.naturalHeight });
+            img.onerror = () => done(null);
+            img.src = viewUrl(name);
+        }
+    });
+    SIZES.set(name, pending);
+    pending.then(onReady);
     return null;
+}
+
+const clampRatio = (ratio) => Math.min(2.5, Math.max(0.4, ratio));
+const ratioOf = (size) => (size && size.w > 0 && size.h > 0 ? clampRatio(size.w / size.h) : null);
+
+// A row where every card keeps its own aspect ratio and all cards share one height
+// (flex-grow = ratio). Rows whose ratios add up to less than ``minRatio`` get a spacer
+// on the right, so a few portrait images never make the row too tall.
+function justifiedRow(items, minRatio) {
+    const row = el("div", "h3e-jrow");
+    let total = 0;
+    for (const { item, ratio } of items) {
+        item.style.flex = `${ratio} 1 0`;
+        total += ratio;
+        row.append(item);
+    }
+    if (total < minRatio) {
+        const spacer = el("div");
+        spacer.style.flex = `${minRatio - total} 1 0`;
+        row.append(spacer);
+    }
+    return row;
 }
 
 // output size with the image's aspect ratio and about the same pixel area, on H3's 32-pixel grid
@@ -328,9 +376,13 @@ class MediaPanel {
         return x;
     }
 
-    tag(text, className = "h3e-badge") {
-        const badge = el("span", `${className} h3e-tag`, text);
-        badge.title = "点击复制，粘贴到提示词里";
+    // ``short`` is shown instead of ``text`` on narrow cards; a click always copies ``text``
+    tag(text, className = "h3e-badge", short = null) {
+        const badge = el("span", `${className} h3e-tag`);
+        if (short) badge.append(el("span", "h3e-long", text), el("span", "h3e-short", short));
+        else badge.textContent = text;
+        badge.title = `点击复制 ${text}，粘贴到提示词里`;
+        badge.dataset.text = text;
         badge.addEventListener("click", (e) => {
             e.stopPropagation();
             this.copy(text);
@@ -339,7 +391,7 @@ class MediaPanel {
     }
 
     addCard(kind, label, shape, multiple, onFiles) {
-        const card = el("div", `h3e-card ${shape}`);
+        const card = el("div", `h3e-card ${shape || ""}`);
         const empty = el("div", "h3e-empty");
         empty.append(el("div", "h3e-plus", "+"), el("div", "", label));
         card.append(empty);
@@ -350,10 +402,10 @@ class MediaPanel {
     }
 
     imageCard(value, shape, badge, onFiles, onRemove) {
-        const card = el("div", `h3e-card h3e-filled ${shape}`);
+        const card = el("div", `h3e-card h3e-filled ${shape || ""}`);
         const img = el("img");
         img.src = viewUrl(value);
-        img.alt = typeof badge === "string" ? badge : badge.textContent;
+        img.alt = typeof badge === "string" ? badge : badge.dataset.text;
         card.title = `${value}\n点击替换`;
         card.append(img, this.removeButton(onRemove), typeof badge === "string" ? el("span", "h3e-badge", badge) : badge);
         card.addEventListener("click", async () => onFiles(await pickFiles("image", false)));
@@ -373,17 +425,23 @@ class MediaPanel {
     // ---------- sections ----------
     framesSection() {
         const section = this.section("首帧 / 尾帧", "都不放＝文生视频");
-        const row = el("div", "h3e-row");
-        for (const [slot, label] of FRAMES) {
-            const value = getValue(this.node, slot);
-            row.append(value
-                ? this.imageCard(value, "h3e-frame", label, (f) => this.setSingle(slot, f), () => {
+        const values = FRAMES.map(([slot]) => getValue(this.node, slot));
+        const ratios = values.map((value) => value && ratioOf(mediaSize(value, "image", () => this.renderSoon())));
+        const output = this.outputSize(linkedGenerators(this.node)[0]);
+        const outputRatio = output?.w > 0 && output?.h > 0 ? clampRatio(output.w / output.h) : null;
+        const items = FRAMES.map(([slot, label], i) => {
+            // a card shows its image's own shape; an empty card copies the other frame, then the output size
+            const ratio = ratios[i] || ratios[1 - i] || outputRatio || 16 / 10;
+            const card = values[i]
+                ? this.imageCard(values[i], "h3e-frame", label, (f) => this.setSingle(slot, f), () => {
                     setValue(this.node, slot, null);
                     this.render();
                 })
-                : this.addCard("image", label, "h3e-frame", false, (f) => this.setSingle(slot, f)));
-        }
-        section.append(row);
+                : this.addCard("image", label, "h3e-frame", false, (f) => this.setSingle(slot, f));
+            card.style.aspectRatio = String(ratio);
+            return { item: card, ratio };
+        });
+        section.append(justifiedRow(items, 1.5));
         const aspects = this.frameAspects();
         if (aspects) section.append(aspects);
         return section;
@@ -469,7 +527,7 @@ class MediaPanel {
         let offered = false;
         for (const [slot, label] of FRAMES) {
             const value = getValue(this.node, slot);
-            const size = value && imageSize(value, () => this.render());
+            const size = value && mediaSize(value, "image", () => this.renderSoon());
             if (!size) continue;
             const orientation = size.w > size.h ? "横图" : size.w < size.h ? "竖图" : "方图";
             const line = el("div", "h3e-aspect");
@@ -513,16 +571,33 @@ class MediaPanel {
     refImagesSection() {
         const refs = this.list(REFS);
         const section = this.section(`参考图 ${refs.length}/${LIMIT.image}`, "提示词里写 <Picture N>");
-        const grid = el("div", "h3e-grid");
-        refs.forEach((value, i) => {
-            grid.append(this.imageCard(value, "h3e-square", this.tag(`<Picture ${i + 1}>`),
-                (f) => this.putInList(REFS, i, f), () => this.removeFromList(REFS, i)));
+        const items = refs.map((value, i) => {
+            const ratio = ratioOf(mediaSize(value, "image", () => this.renderSoon())) || 1;
+            const card = this.imageCard(value, "", this.tag(`<Picture ${i + 1}>`, "h3e-badge", `图${i + 1}`),
+                (f) => this.putInList(REFS, i, f), () => this.removeFromList(REFS, i));
+            card.style.aspectRatio = String(ratio);
+            return { item: card, ratio };
         });
+        const add = (label, shape) => this.addCard("image", label, shape, true, (f) => this.putInList(REFS, refs.length, f));
+        let addRow = null;
         if (refs.length < LIMIT.image) {
-            grid.append(this.addCard("image", refs.length ? "添加" : "添加参考图（可多选）", "h3e-square", true,
-                (f) => this.putInList(REFS, refs.length, f)));
+            if (refs.length % 3) {
+                const card = add("添加", "");
+                card.style.aspectRatio = "1";
+                items.push({ item: card, ratio: 1 });
+            } else {
+                // a lone "add" card gets a slim full-width row instead of a big empty tile
+                addRow = refs.length
+                    ? add(`继续添加（还能加 ${LIMIT.image - refs.length} 张）`, "h3e-add-row")
+                    : add(`添加参考图（可多选，最多 ${LIMIT.image} 张）`, "h3e-add-row h3e-add-tall");
+            }
         }
-        section.append(grid);
+        if (items.length) {
+            const rows = el("div", "h3e-rows");
+            for (let i = 0; i < items.length; i += 3) rows.append(justifiedRow(items.slice(i, i + 3), 2.4));
+            section.append(rows);
+        }
+        if (addRow) section.append(addRow);
         return section;
     }
 
@@ -530,7 +605,7 @@ class MediaPanel {
         // <Audio j> numbering in H3: video soundtracks first, then standalone audio
         let next = 1;
         return videos.map((name) => {
-            const info = mediaInfo(name, () => this.render());
+            const info = mediaInfo(name, () => this.renderSoon());
             if (!info) return { info: null, audioTag: null };
             return { info, audioTag: info.has_audio ? next++ : null };
         });
@@ -539,10 +614,14 @@ class MediaPanel {
     refVideosSection(tracks) {
         const videos = this.list(VIDEOS);
         const section = this.section(`参考视频 ${videos.length}/${LIMIT.video}`, `提示词里写 <Video N>；最多读 ${VIDEO_READ_SECONDS} 秒`);
-        const grid = el("div", "h3e-grid");
-        videos.forEach((value, i) => {
+        const items = videos.map((value, i) => {
+            // the browser knows rotated phone videos; the server probe covers codecs the browser can't play
+            const info = tracks[i].info;
+            const ratio = ratioOf(mediaSize(value, "video", () => this.renderSoon()))
+                || ratioOf(info && { w: info.width, h: info.height }) || 16 / 9;
             const item = el("div", "h3e-vitem");
-            const card = el("div", "h3e-card h3e-filled h3e-wide");
+            const card = el("div", "h3e-card h3e-filled");
+            card.style.aspectRatio = String(ratio);
             const video = el("video");
             video.src = `${viewUrl(value)}#t=0.1`;  // show a frame instead of a black box
             video.muted = true;
@@ -566,23 +645,29 @@ class MediaPanel {
             this.dropTarget(card, "video", (f) => this.putInList(VIDEOS, i, f));
 
             const caption = el("div", "h3e-caption");
-            caption.append(this.tag(`<Video ${i + 1}>`, "h3e-chip"));
-            const { info, audioTag } = tracks[i];
+            caption.append(this.tag(`<Video ${i + 1}>`, "h3e-chip", `视频${i + 1}`));
+            const { audioTag } = tracks[i];
             if (info) {
                 const long = info.duration > VIDEO_READ_SECONDS;
                 const length = el("span", long ? "h3e-warn" : "", formatSeconds(info.duration));
                 if (long) length.title = `超过 ${VIDEO_READ_SECONDS} 秒，只读取前 ${VIDEO_READ_SECONDS} 秒`;
                 caption.append(length);
-                caption.append(audioTag ? this.tag(`<Audio ${audioTag}>`, "h3e-chip") : el("span", "", "无声"));
+                caption.append(audioTag ? this.tag(`<Audio ${audioTag}>`, "h3e-chip", `音频${audioTag}`) : el("span", "", "无声"));
             }
             item.append(card, caption);
-            grid.append(item);
+            return { item, ratio };
         });
-        if (videos.length < LIMIT.video) {
-            grid.append(this.addCard("video", videos.length ? "添加" : "添加参考视频", "h3e-wide", true,
-                (f) => this.putInList(VIDEOS, videos.length, f)));
+        const add = (label, shape) => this.addCard("video", label, shape, true, (f) => this.putInList(VIDEOS, videos.length, f));
+        if (items.length) {
+            if (videos.length < LIMIT.video) {
+                const card = add("添加", "");
+                card.style.aspectRatio = "1";
+                items.push({ item: card, ratio: 1 });
+            }
+            section.append(justifiedRow(items, 3.6));
+        } else {
+            section.append(add(`添加参考视频（可多选，最多 ${LIMIT.video} 段）`, "h3e-add-row h3e-add-tall"));
         }
-        section.append(grid);
         return section;
     }
 
@@ -590,7 +675,7 @@ class MediaPanel {
         const box = el("div", "h3e-audio");
         const line = el("div", "h3e-line");
         line.append(el("span", "h3e-name", `🎵 ${value}`));
-        const info = mediaInfo(value, () => this.render());
+        const info = mediaInfo(value, () => this.renderSoon());
         if (info?.duration) line.append(el("span", "h3e-chip", formatSeconds(info.duration)));
         if (tagNumber) line.append(this.tag(`<Audio ${tagNumber}>`, "h3e-chip"));
         const player = el("audio");
@@ -647,7 +732,25 @@ class MediaPanel {
         this.toastTimer = setTimeout(() => this.toastEl.classList.remove("h3e-show"), 1500);
     }
 
+    renderSoon() {
+        if (this.renderTimer) return;
+        // media sizes arrive one by one; rebuild once for a burst of them
+        this.renderTimer = setTimeout(() => {
+            this.renderTimer = null;
+            this.render();
+        }, 16);
+    }
+
+    // Follow the node's own width. Some frontend versions give the DOM layer a wider box
+    // than the node draws, which made the panel spill past the node's right edge.
+    syncWidth() {
+        const width = this.node.size?.[0];
+        const margin = this.widget?.margin ?? 10;
+        if (width > 0) this.root.style.width = `min(100%, ${Math.max(120, Math.round(width - 2 * margin))}px)`;
+    }
+
     render() {
+        this.syncWidth();
         const mode = this.mode();
         const inner = this.inner;
         inner.replaceChildren();
@@ -686,8 +789,10 @@ class MediaPanel {
     }
 
     contentHeight() {
+        // the canvas gives the DOM box (layout height - 2 * margin)
         const measured = this.inner.offsetHeight;
-        return measured > 40 ? measured + 4 : 420;
+        const margin = this.widget?.margin ?? 10;
+        return measured > 40 ? measured + 2 * margin + 2 : 420;
     }
 
     fit() {
@@ -770,6 +875,7 @@ app.registerExtension({
             getMaxHeight: () => panel.contentHeight(),
         });
         widget.serialize = false;
+        panel.widget = widget;
         const configure = node.onConfigure;
         node.onConfigure = function (...args) {
             const result = configure?.apply(this, args);
@@ -786,6 +892,7 @@ app.registerExtension({
         const resize = node.onResize;
         node.onResize = function (...args) {
             const result = resize?.apply(this, args);
+            panel.syncWidth();
             panel.fit();
             return result;
         };
@@ -793,6 +900,13 @@ app.registerExtension({
         node.onRemoved = function (...args) {
             panel.observer?.disconnect();
             return removed?.apply(this, args);
+        };
+        // the canvas never lets a resize go below computeSize(); keep room for two frame cards
+        const computeSize = node.computeSize;
+        node.computeSize = function (...args) {
+            const size = computeSize.apply(this, args);
+            if (size) size[0] = Math.max(size[0], MIN_WIDTH);
+            return size;
         };
         panel.watchSize();
         panel.render();
