@@ -27,7 +27,7 @@ import comfy.utils
 from . import assemble, continuation, faces, timing
 from .conditioning import ConditioningBuilder
 from .media import Media
-from .pipeline import MODE_REFERENCE, Reporter, _sample, _sigmas
+from .pipeline import MODE_REFERENCE, Reporter, _sample
 
 DEFAULT_PROMPT = (
     "integrated_multimodal_description: [Shot 1] Live-action, cinematic, a close-up of a person's face that "
@@ -68,15 +68,15 @@ class RefineSettings:
     faces: str = ""               # "1,3" -> only these track ids; empty -> all
     max_face: int = 128           # faces whose typical height is above this are left alone
     refine_size: int = 384
-    steps: int = 12
-    strength: float = 0.35        # unshifted noise level the redraw starts from
+    steps: int = 6                # sampling steps actually run
+    strength: float = 0.4         # share of noise in the crop where the redraw starts (0.4 keeps 60% of it)
     seed: int = 0
     sampler_name: str = "res_multistep"
     scheduler: str = "simple"
     context: float = 2.2          # crop side = face size x context
     feather: float = 0.15
-    detect_score: float = 0.6
-    ref_image_size: str = "match"
+    detect_score: float = 0.7
+    ref_image_size: str = "max"   # the refine canvas is small: "match" would shrink references to it
     low_vram: bool = True
 
 
@@ -95,6 +95,33 @@ def plan_chunks(start: int, end: int) -> list[timing.Segment]:
         begin = prev.end_frame - timing.CONTEXT_FRAMES
         chunks.append(timing.Segment(len(chunks), begin, _grid_at_least(end + 1 - begin), timing.CONTEXT_FRAMES))
     return chunks
+
+
+def refine_sigmas(shift: float, start: float, steps: int) -> torch.Tensor:
+    """Noise levels from ``start`` (share of noise mixed into the crop) down to 0, spaced
+    evenly in the model's unshifted time so most steps land on fine detail.
+
+    ``start`` is the real mix: at 0.4 the sampler begins from 40% noise + 60% of the
+    crop. (H3's schedule is shifted by 12, so "0.35 of the way" through a normal
+    schedule would already be 86% noise, which redraws the crop from scratch.)"""
+    start = min(max(float(start), 0.01), 0.99)
+    t0 = timing.unshift_sigma(start, shift)
+    ts = torch.linspace(t0, 0.0, max(1, int(steps)) + 1, dtype=torch.float64)
+    return (shift * ts / (1 + (shift - 1) * ts)).float()
+
+
+def face_mask(size: int, cx: float, cy: float, face: float, feather: float) -> torch.Tensor:
+    """[S, S, 1] blend weight: an ellipse over the face, hair and chin (centre nudged up),
+    fading out over ``feather * 2.5`` face sizes and always zero at the crop border, so
+    the background around the head keeps the original pixels."""
+    coords = torch.arange(size, dtype=torch.float32) + 0.5
+    yy, xx = torch.meshgrid(coords, coords, indexing="ij")
+    face = max(face, 1.0)
+    d = torch.sqrt(((xx - cx) / (0.75 * face)) ** 2 + ((yy - (cy - 0.1 * face)) / (0.95 * face)) ** 2)
+    width = max(feather * 2.5, 0.1)
+    w = ((1.0 + width - d) / width).clamp(0.0, 1.0)
+    w = w * w * (3 - 2 * w)
+    return (w.unsqueeze(-1) * feather_mask(size, 0.06))
 
 
 def feather_mask(size: int, feather: float) -> torch.Tensor:
@@ -118,13 +145,17 @@ def _resize(frames: torch.Tensor, size: int, method: str) -> torch.Tensor:
     return comfy.utils.common_upscale(frames.movedim(-1, 1), size, size, method, "disabled").movedim(1, -1)
 
 
-def _crops(frames: torch.Tensor, plan: faces.CropPlan, indices: list[int]) -> torch.Tensor:
+def _crops(frames: torch.Tensor, plan: faces.CropPlan, indices: list[int], size_r: int) -> torch.Tensor:
+    """Each frame's crop (its own size) resized to ``size_r`` x ``size_r``."""
     last = frames.shape[0] - 1
     out = []
     for f in indices:
-        x0, y0 = plan.corners[min(f, last)]
-        out.append(frames[min(f, last), y0:y0 + plan.size, x0:x0 + plan.size, :3])
-    return torch.stack(out)
+        g = min(f, last)
+        size = plan.sizes[g]
+        x0, y0 = plan.corners[g]
+        crop = frames[g:g + 1, y0:y0 + size, x0:x0 + size, :3]
+        out.append(_resize(crop, size_r, "bicubic" if size < size_r else "area"))
+    return torch.cat(out).clamp(0.0, 1.0)
 
 
 def _audio_latent(audio_vae, audio: dict | None, start_frame: int, frames: int) -> torch.Tensor | None:
@@ -188,12 +219,11 @@ def refine_video(settings: RefineSettings, model, clip, video_vae, audio_vae, im
     prompt = settings.prompt.strip() or (default_reference_prompt(len(refs)) if refs else DEFAULT_PROMPT)
     builder = ConditioningBuilder(clip, video_vae, audio_vae, size_r, size_r, Media(ref_images=refs),
                                   settings.ref_image_size)
-    sigmas = _sigmas(model, settings.scheduler, settings.steps)
     model_sampling = model.get_model_object("model_sampling")
-    k = timing.handoff_index(sigmas.tolist(), float(getattr(model_sampling, "shift", 12.0)), settings.strength)
+    sigmas = refine_sigmas(float(getattr(model_sampling, "shift", 12.0)), settings.strength, settings.steps)
     sampler = comfy.samplers.sampler_object(settings.sampler_name)
-    report.add(f"精修：{size_r}×{size_r}，{settings.steps} 步的日程里从第 {k} 步开始，实际跑 {len(sigmas) - 1 - k} 步"
-               f"（起点 sigma={float(sigmas[k]):.3f}）；{'参考模式' if reference else '图文模式'}"
+    report.add(f"精修：{size_r}×{size_r}，从 {settings.strength:.0%} 噪声开始（保留 {1 - settings.strength:.0%} 原画面），"
+               f"跑 {settings.steps} 步；{'参考模式' if reference else '图文模式'}"
                + (f"，参考图×{len(refs)}" if refs else ""))
 
     out = images.clone()
@@ -206,7 +236,7 @@ def refine_video(settings: RefineSettings, model, clip, video_vae, audio_vae, im
         for chunk in chunks:
             mm.throw_exception_if_processing_interrupted()
             indices = list(range(chunk.start_frame, chunk.end_frame))
-            crops = _resize(_crops(out, plan, indices), size_r, "bicubic").clamp(0.0, 1.0)
+            crops = _crops(out, plan, indices, size_r)
             video_z = video_vae.encode(crops).to("cpu", torch.float32)
             if video_z.shape[2] != timing.video_latent_t(chunk.frames):
                 raise RuntimeError(f"crop encoded to {video_z.shape[2]} latent slots, expected "
@@ -228,7 +258,7 @@ def refine_video(settings: RefineSettings, model, clip, video_vae, audio_vae, im
                                          torch.randn(audio_z.shape, generator=generator))
             positive = (builder.reference_mode(prompt, chunk) if reference
                         else builder.image_mode(prompt, chunk, False, None))[0]
-            result = _sample(model, positive, clean, sigmas[k:], sampler, seed, noise=noise,
+            result = _sample(model, positive, clean, sigmas, sampler, seed, noise=noise,
                              mask=continuation.join_av(video_mask, audio_mask))
             video_out = continuation.split_av(result)[0].to("cpu", torch.float32)
             if tail is not None:
@@ -241,16 +271,25 @@ def refine_video(settings: RefineSettings, model, clip, video_vae, audio_vae, im
 
         refined = assemble.decode_video(video_vae, latents, chunks)  # [frames, R, R, 3], from track.start
         frames = list(range(track.start, track.end + 1))
-        refined = refined[:len(frames)]
-        original = _crops(out, plan, frames)
-        refined = match_color(_resize(refined, plan.size, "area").clamp(0.0, 1.0), original)
-        weight = feather_mask(plan.size, settings.feather)
+        refined = match_color(refined[:len(frames)].clamp(0.0, 1.0), _crops(out, plan, frames, size_r))
+        weights = faces.paste_weights(track)
+        pasted = 0
         for i, f in enumerate(frames):
+            w = weights.get(f, 0.0)
+            if w <= 0:
+                continue  # face lost or moving fast: keep the original frame
+            size = plan.sizes[f]
             x0, y0 = plan.corners[f]
-            region = out[f, y0:y0 + plan.size, x0:x0 + plan.size, :3]
-            out[f, y0:y0 + plan.size, x0:x0 + plan.size, :3] = refined[i] * weight + region * (1 - weight)
-        del refined, original, latents
-        report.add(f"脸 {track.id}：精修完成，第 {track.start}–{track.end} 帧，裁剪 {plan.size}px → {size_r}px，"
+            cx, cy, face = plan.centers[f]
+            patch = _resize(refined[i:i + 1], size, "area" if size < size_r else "bicubic")[0].clamp(0.0, 1.0)
+            m = face_mask(size, cx, cy, face, settings.feather) * w
+            region = out[f, y0:y0 + size, x0:x0 + size, :3]
+            out[f, y0:y0 + size, x0:x0 + size, :3] = patch * m + region * (1 - m)
+            pasted += 1
+        sizes = [plan.sizes[f] for f in frames]
+        del refined, latents
+        report.add(f"脸 {track.id}：精修完成，第 {track.start}–{track.end} 帧，贴回 {pasted} 帧"
+                   f"（其余帧没检测到脸或动得太快，保留原画面），裁剪 {min(sizes)}–{max(sizes)}px → {size_r}px，"
                    f"{len(chunks)} 个窗口，用时 {time.perf_counter() - t0:.1f}s")
     if settings.low_vram:
         mm.soft_empty_cache()

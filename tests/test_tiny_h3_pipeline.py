@@ -503,7 +503,7 @@ def test_face_refine_redraws_only_the_face(env, monkeypatch):
 
     monkeypatch.setattr(refine, "_sample", spy)
     video, mask = _face_video(60, 320, 512)
-    settings = refine.RefineSettings(mode=MODE_IMAGE, steps=6, strength=0.35, refine_size=128,
+    settings = refine.RefineSettings(mode=MODE_IMAGE, steps=6, strength=0.4, refine_size=128,
                                      sampler_name="euler", low_vram=False)
     out, report = refine.refine_video(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(),
                                       video, _audio(3.0), None, mask)
@@ -513,7 +513,7 @@ def test_face_refine_redraws_only_the_face(env, monkeypatch):
     assert torch.equal(out[:, 250:, :, :], video[:, 250:, :, :])
     assert (out[:, 100:140] - video[:, 100:140]).abs().max() > 1e-3
     # partial redraw: only the tail of the schedule runs; audio is kept, video regenerated
-    assert len(calls) == 1 and calls[0]["sigmas"] < 7
+    assert len(calls) == 1 and calls[0]["sigmas"] == 7  # 6 steps from 40% noise down to 0
     video_mask, audio_mask = calls[0]["mask"].unbind()
     assert video_mask.min() == 1 and audio_mask.max() == 0
     assert calls[0]["latent"].unbind()[0].shape[-2:] == (8, 8)  # 128 / 16
@@ -582,3 +582,11 @@ def test_face_refine_maps_a_smaller_mask_onto_the_video():
     settings = refine.RefineSettings(mode=MODE_IMAGE, max_face=32)
     out, report = refine.refine_video(settings, None, None, None, None, video, None, None, mask)
     assert out is video and "大小约 40px" in report and "已经够大" in report
+
+
+
+def test_refine_sigmas_start_at_the_real_noise_share():
+    from h3easy import refine
+    sig = refine.refine_sigmas(12.0, 0.4, 6)
+    assert len(sig) == 7 and abs(float(sig[0]) - 0.4) < 1e-6 and float(sig[-1]) == 0.0
+    assert all(float(a) > float(b) for a, b in zip(sig, sig[1:]))

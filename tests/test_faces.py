@@ -33,17 +33,41 @@ def test_far_jump_starts_a_new_track():
     assert [(t.start, t.end) for t in tracks] == [(0, 19), (20, 39)]
 
 
-def test_plan_crop_size_and_bounds():
-    track = faces.build_tracks(_moving(30, 2, 300, 0.0, 24))[0]  # small face at the left edge, low
-    plan = faces.plan_crop(track, 960, 544, 50, refine_size=512, context=2.2)
-    assert plan.size == 128  # 24 * 2.2 = 53 < 512 / 4
-    for f, (x0, y0) in plan.corners.items():
-        assert 0 <= x0 <= 960 - 128 and 0 <= y0 <= 544 - 128
-    assert plan.corners[49] == plan.corners[29]  # after the track: hold the last position
-    big = faces.build_tracks(_moving(30, 100, 50, 0.0, 400))[0]
-    assert faces.plan_crop(big, 960, 544, 30, 512).size == 544  # never larger than the frame
+def test_plan_crop_follows_face_size_and_bounds():
+    det = [[faces.Box(2, 300, 24 + f, 24 + f, 0.9)] for f in range(30)]  # small face at the left edge, growing
+    track = faces.build_tracks(det)[0]
+    plan = faces.plan_crop(track, 960, 544, 50, refine_size=384, context=2.2)
+    assert plan.sizes[0] == 96  # 24 * 2.2 = 53 < 384 / 4
+    assert plan.sizes[29] > plan.sizes[0]  # grows with the face (smoothed)
+    for f in range(50):
+        x0, y0 = plan.corners[f]
+        assert 0 <= x0 <= 960 - plan.sizes[f] and 0 <= y0 <= 544 - plan.sizes[f]
+    assert plan.corners[49] == plan.corners[29]  # after the track: hold the last crop
+    big = faces.build_tracks([[faces.Box(100, 50, 400, 400, 0.9)] for _ in range(30)])[0]
+    assert faces.plan_crop(big, 960, 544, 30, 512).sizes[0] == 544  # never larger than the frame
 
 
+def test_duplicate_track_from_a_fast_move_is_dropped():
+    main = [[faces.Box(300 + 3 * f, 100, 40, 40, 0.9)] for f in range(60)]
+    # a second detector hit on the same face for 15 frames that did not link to the main track
+    for f in range(20, 35):
+        main[f].append(faces.Box(305 + 3 * f, 102, 40, 40, 0.8))
+    tracks = faces.build_tracks(main)
+    # every frame of the face is covered once: no frame is refined twice
+    covered = [f for t in tracks for f in t.boxes]
+    assert sorted(covered) == list(range(60))
+
+
+def test_paste_weights_skip_lost_and_fast_frames():
+    det = [[faces.Box(100, 100, 40, 40, 0.9)] for _ in range(30)]
+    for f in range(10, 22):
+        det[f] = []                                              # face lost for 12 frames
+    det += [[faces.Box(100 + 30 * i, 100, 40, 40, 0.9)] for i in range(1, 15)]  # then whipping sideways
+    track = faces.build_tracks(det, max_gap=12)[0]
+    w = faces.paste_weights(track)
+    assert w[0] == 1.0 and w[5] > 0.9
+    assert w[16] == 0.0                                          # deep inside the gap: keep the original
+    assert w[40] == 0.0                                          # 0.75 face sizes per frame: too fast
 def test_parse_face_ids():
     assert faces.parse_face_ids("") is None
     assert faces.parse_face_ids("1, 3，2") == {1, 2, 3}
