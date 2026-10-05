@@ -1,5 +1,5 @@
 {
-  "id": "f94f5b19-3794-41c8-9e6a-42fb16d6ba5e",
+  "id": "d05d95d9-d5ad-4a4b-9344-a7fd197c4e02",
   "revision": 0,
   "last_node_id": 11,
   "last_link_id": 9,
@@ -24,10 +24,10 @@
       "title": "📖 使用说明（先看这里）",
       "properties": {},
       "widgets_values": [
-        "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：在「H3 素材加载器」里**点卡片选文件，或直接把文件拖到卡片上**。参考图可以一次拖入多张；点图上的 `<Picture N>` 标签会复制到剪贴板。不用的留空即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
+        "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
       ],
       "widgets_values_named": {
-        "text": "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：在「H3 素材加载器」里**点卡片选文件，或直接把文件拖到卡片上**。参考图可以一次拖入多张；点图上的 `<Picture N>` 标签会复制到剪贴板。不用的留空即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
+        "text": "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -541,7 +541,7 @@
       ],
       "size": [
         420,
-        592
+        458
       ],
       "flags": {},
       "order": 7,
@@ -740,15 +740,15 @@
           "color_on": null,
           "dir": null,
           "label": null,
-          "localized_name": "音频",
+          "localized_name": "音频1",
           "locked": null,
-          "name": "audio_file",
+          "name": "audio_1",
           "nameLocked": null,
           "removable": null,
           "shape": null,
           "type": "COMBO",
           "widget": {
-            "name": "audio_file"
+            "name": "audio_1"
           },
           "link": null
         },
@@ -757,15 +757,83 @@
           "color_on": null,
           "dir": null,
           "label": null,
-          "localized_name": "视频",
+          "localized_name": "音频2",
           "locked": null,
-          "name": "video_file",
+          "name": "audio_2",
           "nameLocked": null,
           "removable": null,
           "shape": null,
           "type": "COMBO",
           "widget": {
-            "name": "video_file"
+            "name": "audio_2"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "音频3",
+          "locked": null,
+          "name": "audio_3",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "audio_3"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频1",
+          "locked": null,
+          "name": "video_1",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_1"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频2",
+          "locked": null,
+          "name": "video_2",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_2"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "视频3",
+          "locked": null,
+          "name": "video_3",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "video_3"
           },
           "link": null
         }
@@ -806,6 +874,10 @@
         "无",
         "无",
         "无",
+        "无",
+        "无",
+        "无",
+        "无",
         "无"
       ],
       "widgets_values_named": {
@@ -820,8 +892,12 @@
         "ref_image_7": "无",
         "ref_image_8": "无",
         "ref_image_9": "无",
-        "audio_file": "无",
-        "video_file": "无"
+        "audio_1": "无",
+        "audio_2": "无",
+        "audio_3": "无",
+        "video_1": "无",
+        "video_2": "无",
+        "video_3": "无"
       }
     },
     {

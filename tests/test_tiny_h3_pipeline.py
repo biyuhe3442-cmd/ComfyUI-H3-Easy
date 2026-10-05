@@ -151,7 +151,7 @@ def test_three_segments_lock_audio_tst(env):
     from h3easy.media import Media
     from h3easy import timing
     media = Media(first_frame=torch.rand(1, 320, 512, 3), last_frame=torch.rand(1, 320, 512, 3),
-                  audio=_audio(30.0))
+                  audios=[_audio(30.0)])
     clip = FakeClip()
     vae = FakeVideoVAE()
     settings = _settings(pipeline, segments=3, segment_seconds=4.0, progressive=True,
@@ -164,7 +164,7 @@ def test_three_segments_lock_audio_tst(env):
     assert result.audio["sample_rate"] == 44100
     assert result.audio["waveform"].shape[-1] == round(total / 24 * 44100)
     # locked audio is the source waveform, untouched
-    assert torch.equal(result.audio["waveform"], media.audio["waveform"][..., :result.audio["waveform"].shape[-1]])
+    assert torch.equal(result.audio["waveform"], media.audios[0]["waveform"][..., :result.audio["waveform"].shape[-1]])
     assert "TST" in result.report and "平均放大系数" in result.report
     # every segment but the last decoded with 5 extra right-context slots
     video_decodes = [s for s in vae.decodes if s[3] == 20]
@@ -198,7 +198,7 @@ def test_reference_mode(env):
     pipeline = env["pipeline"]
     from h3easy.media import Media
     media = Media(ref_images=[torch.rand(1, 256, 256, 3), torch.rand(1, 300, 200, 3)],
-                  video=torch.rand(30, 128, 160, 3), video_audio=_audio(1.25), audio=_audio(2.0))
+                  videos=[torch.rand(30, 128, 160, 3)], video_audios=[_audio(1.25)], audios=[_audio(2.0)])
     clip = FakeClip()
     result = pipeline.run(_settings(pipeline, mode=pipeline.MODE_REFERENCE, segments=2, progressive=True,
                                     prompt="<Picture 1> waves at <Picture 2>"),
@@ -238,7 +238,7 @@ def test_generate_node_end_to_end(env):
         mode=MODE_IMAGE, prompt="hello", clip=FakeClip(), video_vae=FakeVideoVAE(), audio_vae=FakeAudioVAE(),
         segments=2, segment_seconds=3.5, width=512, height=320, steps=4, seed=5, lock_audio=True,
         progressive=True, tst=True, low_vram=True, sampler_name="euler", image_model=env["model"],
-        media=Media(audio=_audio(10.0)))
+        media=Media(audios=[_audio(10.0)]))
     video, images, audio, report = out.args
     components = video.get_components()
     assert images.shape == (192, 320, 512, 3)
@@ -287,7 +287,10 @@ def test_media_loader_node(tmp_path):
     folder_paths.set_input_directory(str(tmp_path))
     try:
         kwargs = {name: NONE for name in ["last_frame"] + [f"ref_image_{i}" for i in range(1, 10)]}
-        kwargs.update(first_frame="a.png", ref_image_2="a.png", audio_file="v.wav", video_file="c.mp4")
+        kwargs.update({f"audio_{i}": NONE for i in range(1, 4)})
+        kwargs.update({f"video_{i}": NONE for i in range(1, 4)})
+        kwargs.update(first_frame="a.png", ref_image_2="a.png", audio_1="v.wav", audio_3="v.wav",
+                      video_2="c.mp4")
         assert H3EasyMediaLoader.validate_inputs(**kwargs) is True
         assert "找不到文件" in H3EasyMediaLoader.validate_inputs(**dict(kwargs, ref_image_3="missing.png"))
         media = H3EasyMediaLoader.execute(**kwargs).args[0]
@@ -296,8 +299,53 @@ def test_media_loader_node(tmp_path):
     assert media.first_frame.shape == (1, 40, 60, 3)
     assert media.last_frame is None
     assert len(media.ref_images) == 1
-    assert media.audio["sample_rate"] == rate and media.audio["waveform"].shape[-1] == rate * 2
+    assert len(media.audios) == 2
+    assert media.audios[0]["sample_rate"] == rate and media.audios[0]["waveform"].shape[-1] == rate * 2
+    assert media.lock_source is media.audios[0]
     # 2 s at 12 fps -> 48 frames at 24 fps, every source frame shown twice
-    assert media.video.shape == (48, 48, 64, 3)
-    assert torch.equal(media.video[0], media.video[1])
-    assert media.video_audio is None
+    assert len(media.videos) == 1
+    assert media.videos[0].shape == (48, 48, 64, 3)
+    assert torch.equal(media.videos[0][0], media.videos[0][1])
+    assert media.video_audios == [None]
+
+    from h3easy.media import probe
+    assert probe(str(tmp_path / "c.mp4"))["has_audio"] is False
+    wav = probe(str(tmp_path / "v.wav"))
+    assert wav["has_audio"] is True and abs(wav["duration"] - 2.0) < 0.05
+
+
+def test_reference_mode_full_limits():
+    """9 images, 3 videos (two with soundtracks) and 3 audios reach Core in H3's order."""
+    from h3easy.conditioning import ConditioningBuilder
+    from h3easy.media import Media
+    from h3easy.timing import plan_segments
+
+    class RecordingClip(FakeClip):
+        def tokenize(self, text, images=None, minimax_ref_items=None, **kwargs):
+            self.items = [item["type"] for item in (minimax_ref_items or [])]
+            return super().tokenize(text, images=images, minimax_ref_items=minimax_ref_items)
+
+    media = Media(ref_images=[torch.rand(1, 64, 64, 3) for _ in range(9)],
+                  videos=[torch.rand(30, 64, 96, 3) for _ in range(3)],
+                  video_audios=[_audio(1.2), None, _audio(1.0)],
+                  audios=[_audio(1.0), _audio(2.0), _audio(0.5)])
+    clip = RecordingClip()
+    builder = ConditioningBuilder(clip, FakeVideoVAE(), FakeAudioVAE(), 512, 320, media)
+    positive, _ = builder.reference_mode("x", plan_segments(1, 3.5)[0])
+    # images, then each video preceded by its soundtrack label, then standalone audio
+    assert clip.items == ["image"] * 9 + ["audio", "video", "video", "audio", "video"] + ["audio"] * 3
+    kinds = [block["kind"] for block in positive[0][1]["minimax_refs"]]
+    assert kinds == ["image"] * 9 + ["video_audio", "video", "video_audio"] + ["audio"] * 3
+
+
+def test_image_mode_ignores_reference_media(env):
+    pipeline = env["pipeline"]
+    from h3easy.media import Media
+    media = Media(ref_images=[torch.rand(1, 64, 64, 3)], videos=[torch.rand(30, 64, 96, 3)],
+                  video_audios=[_audio(1.25)])
+    result = pipeline.run(_settings(pipeline, progressive=False), env["model"], FakeClip(), FakeVideoVAE(),
+                          FakeAudioVAE(), media)
+    # no audio slot filled -> nothing locked, even though a video has a soundtrack
+    assert "锁定音频" not in result.report
+    assert "输出音频：H3 生成" in result.report
+    assert "图文模式不使用参考图/参考视频" in result.report

@@ -10,7 +10,7 @@ import folder_paths
 from comfy_api.latest import InputImpl, Types, io
 
 from . import media as media_io
-from .media import NONE, REF_SLOTS, Media
+from .media import AUDIO_SLOTS, NONE, REF_SLOTS, VIDEO_SLOTS, Media
 from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run
 
 CATEGORY = "H3 Easy"
@@ -18,7 +18,9 @@ MediaType = io.Custom("H3_EASY_MEDIA")
 UpscalerType = io.Custom("H3_LATENT_UPSCALER")
 
 IMAGE_FIELDS = ["first_frame", "last_frame"] + [f"ref_image_{i}" for i in range(1, REF_SLOTS + 1)]
-FILE_FIELDS = IMAGE_FIELDS + ["audio_file", "video_file"]
+AUDIO_FIELDS = [f"audio_{i}" for i in range(1, AUDIO_SLOTS + 1)]
+VIDEO_FIELDS = [f"video_{i}" for i in range(1, VIDEO_SLOTS + 1)]
+FILE_FIELDS = IMAGE_FIELDS + AUDIO_FIELDS + VIDEO_FIELDS
 
 
 class H3EasyMediaLoader(io.ComfyNode):
@@ -38,18 +40,21 @@ class H3EasyMediaLoader(io.ComfyNode):
         for i in range(1, REF_SLOTS + 1):
             inputs.append(image_input(f"ref_image_{i}", f"参考图{i}",
                                       f"参考模式：提示词里用 <Picture {i}> 指代这张图。"))
-        inputs += [
-            io.Combo.Input("audio_file", options=audios, default=NONE, display_name="音频",
-                           tooltip="图文模式：锁定音频（引导口型，最终输出原音频）。参考模式：作为参考音频。"),
-            io.Combo.Input("video_file", options=videos, default=NONE, display_name="视频",
-                           tooltip="参考模式：画面作为参考视频（最多读取 15 秒）。图文模式：没有单独音频时，用它的音轨锁定音频。"),
-        ]
+        for i in range(1, AUDIO_SLOTS + 1):
+            inputs.append(io.Combo.Input(
+                f"audio_{i}", options=audios, default=NONE, display_name=f"音频{i}",
+                tooltip="图文模式：音频1 用于锁定音频（引导口型，最终输出原音频；也可以放带声音的视频）。"
+                        "参考模式：参考音频，提示词里用 <Audio N> 指代（视频的音轨排在前面）。"))
+        for i in range(1, VIDEO_SLOTS + 1):
+            inputs.append(io.Combo.Input(
+                f"video_{i}", options=videos, default=NONE, display_name=f"视频{i}",
+                tooltip=f"参考模式：参考视频，提示词里用 <Video {i}> 指代；最多读取 15 秒，自带音轨一起作为参考。"))
         return io.Schema(
             node_id="H3EasyMediaLoader",
             display_name="H3 素材加载器",
             category=CATEGORY,
-            description="可视化素材面板：首帧/尾帧、最多 9 张参考图、音频、视频。点击卡片或直接拖入文件，"
-                        "打包后接到「H3 一键生成」。",
+            description="可视化素材面板：首帧/尾帧、最多 9 张参考图、3 段参考视频、3 段音频（与官方 H3 上限一致）。"
+                        "面板会跟随「H3 一键生成」的模式只显示用得到的素材；点击卡片或直接拖入文件。",
             inputs=inputs,
             outputs=[MediaType.Output(display_name="素材")],
         )
@@ -78,11 +83,13 @@ class H3EasyMediaLoader(io.ComfyNode):
             name = kwargs.get(f"ref_image_{i}")
             if media_io.selected(name):
                 bundle.ref_images.append(media_io.load_image(name))
-        if media_io.selected(kwargs.get("audio_file")):
-            bundle.audio = media_io.load_audio(kwargs["audio_file"])
-        if media_io.selected(kwargs.get("video_file")):
-            bundle.video = media_io.load_video_frames(kwargs["video_file"])
-            bundle.video_audio = media_io.load_video_audio(kwargs["video_file"])
+        for name in AUDIO_FIELDS:
+            if media_io.selected(kwargs.get(name)):
+                bundle.audios.append(media_io.load_audio(kwargs[name]))
+        for name in VIDEO_FIELDS:
+            if media_io.selected(kwargs.get(name)):
+                bundle.videos.append(media_io.load_video_frames(kwargs[name]))
+                bundle.video_audios.append(media_io.load_video_audio(kwargs[name]))
         return io.NodeOutput(bundle)
 
 
@@ -122,7 +129,7 @@ class H3EasyGenerate(io.ComfyNode):
                 io.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
                              display_name="种子"),
                 io.Boolean.Input("lock_audio", default=True, display_name="锁定音频",
-                                 tooltip="仅图文模式：素材里有音频（或带音轨的视频）时，用它引导口型，最终输出原音频。"),
+                                 tooltip="仅图文模式：素材面板的「锁定音频」里放了音频时，用它引导口型，最终输出原音频。"),
                 io.Boolean.Input("progressive", default=True, display_name="渐进加速",
                                  tooltip="第 1 段前期先在小分辨率下生成再放大，省时间和显存。续写段始终全分辨率。"),
                 io.Boolean.Input("tst", default=False, display_name="TST防闪烁",

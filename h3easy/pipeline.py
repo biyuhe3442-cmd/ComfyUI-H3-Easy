@@ -167,9 +167,7 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
     prompts, layout = split_prompts(settings.prompt, windows)
     total_seconds = assemble.total_seconds(segments)
 
-    lock_source = None
-    if image_mode and settings.lock_audio:
-        lock_source = media.audio if media.audio is not None else media.video_audio
+    lock_source = media.lock_source if image_mode and settings.lock_audio else None
 
     report.add(f"模式：{'图文' if image_mode else '参考'}；素材：{media.describe()}")
     report.add(f"分段：{len(segments)} 段，总时长 {total_seconds:.2f}s，分辨率 {settings.width}×{settings.height}，"
@@ -178,13 +176,16 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         a, b = seg.window_seconds
         report.add(f"  第 {seg.index + 1} 段：{a:.2f}–{b:.2f}s（{seg.frames} 帧，新增 {seg.new_frames} 帧）")
     if lock_source is not None:
-        report.add("锁定音频：生成时用它引导口型/节奏，最终输出原音频")
-    if not image_mode and (media.audio is not None or media.video_audio is not None):
+        report.add("锁定音频（音频1）：生成时用它引导口型/节奏，最终输出原音频")
+        if len(media.audios) > 1:
+            report.add("提示：图文模式只用音频1 锁定，其余音频不使用")
+    has_ref_audio = bool(media.audios) or any(a is not None for a in media.video_audios)
+    if not image_mode and has_ref_audio:
         report.add("参考模式：音频只作为参考，最终输出 H3 生成的声音")
-    if not image_mode and not media.ref_images and media.video is None and media.audio is None:
+    if not image_mode and not (media.ref_images or media.videos or media.audios):
         report.add("提示：参考模式没有任何参考素材，效果等同文生视频")
-    if image_mode and media.ref_images:
-        report.add("提示：图文模式不使用参考图（要用参考图请切到参考模式）")
+    if image_mode and (media.ref_images or media.videos):
+        report.add("提示：图文模式不使用参考图/参考视频（要用请切到参考模式）")
     if not image_mode and (media.first_frame is not None or media.last_frame is not None):
         report.add("提示：参考模式不使用首帧/尾帧（要用请切到图文模式）")
 

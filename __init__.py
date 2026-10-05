@@ -11,6 +11,7 @@ if not __package__:  # loaded as a plain module (pytest rootdir), not as a custo
     ComfyExtension = None
 
 if ComfyExtension is not None:
+    from .h3easy import server_routes  # noqa: F401  (registers /h3easy/media_info)
     from .h3easy.nodes import NODES
 
     class H3EasyExtension(ComfyExtension):

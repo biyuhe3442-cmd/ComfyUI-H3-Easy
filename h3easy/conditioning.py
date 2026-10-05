@@ -52,13 +52,13 @@ class ConditioningBuilder:
         if key not in self._cache:
             media = self.media
             ref_images = {f"ref_image_{i + 1}": img for i, img in enumerate(media.ref_images)}
-            ref_videos, ref_video_audios, ref_audios = {}, {}, {}
-            if media.video is not None:
-                ref_videos["ref_video_1"] = media.video
-                if media.video_audio is not None:
-                    ref_video_audios["ref_video_audio_1"] = media.video_audio
-            if media.audio is not None:
-                ref_audios["ref_audio_1"] = media.audio
+            ref_videos, ref_video_audios = {}, {}
+            for i, video in enumerate(media.videos):
+                ref_videos[f"ref_video_{i + 1}"] = video
+                soundtrack = media.video_audios[i] if i < len(media.video_audios) else None
+                if soundtrack is not None:
+                    ref_video_audios[f"ref_video_audio_{i + 1}"] = soundtrack
+            ref_audios = {f"ref_audio_{i + 1}": audio for i, audio in enumerate(media.audios)}
             self._cache[key] = _out(core_h3.MiniMaxH3ReferenceToVideo.execute(
                 clip=self.clip, prompt=prompt, width=self.width, height=self.height,
                 length=segment.frames, ref_image_size=self.ref_image_size,

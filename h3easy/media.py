@@ -14,7 +14,10 @@ import folder_paths
 from .timing import FPS
 
 NONE = "无"
+# MiniMax H3 reference limits (ComfyUI Core "MiniMax H3 Reference to Video")
 REF_SLOTS = 9
+AUDIO_SLOTS = 3
+VIDEO_SLOTS = 3
 VIDEO_MAX_SECONDS = 15.0
 VIDEO_MAX_PIXELS = 640 * 640  # reference video tokens ride through every step; keep them light
 
@@ -24,9 +27,14 @@ class Media:
     first_frame: torch.Tensor | None = None
     last_frame: torch.Tensor | None = None
     ref_images: list[torch.Tensor] = field(default_factory=list)
-    audio: dict | None = None          # standalone audio file
-    video: torch.Tensor | None = None  # 24 fps frames [F, H, W, 3]
-    video_audio: dict | None = None    # soundtrack of the video file
+    audios: list[dict] = field(default_factory=list)              # standalone audio files
+    videos: list[torch.Tensor] = field(default_factory=list)      # 24 fps frames [F, H, W, 3]
+    video_audios: list[dict | None] = field(default_factory=list)  # soundtrack of each video (or None)
+
+    @property
+    def lock_source(self) -> dict | None:
+        """Audio that locks the soundtrack in image mode: audio slot 1 (a video file there gives its soundtrack)."""
+        return self.audios[0] if self.audios else None
 
     def describe(self) -> str:
         parts = []
@@ -36,12 +44,11 @@ class Media:
             parts.append("尾帧")
         if self.ref_images:
             parts.append(f"参考图×{len(self.ref_images)}")
-        if self.audio is not None:
-            parts.append(f"音频 {self.audio['waveform'].shape[-1] / self.audio['sample_rate']:.1f}s")
-        if self.video is not None:
-            parts.append(f"视频 {self.video.shape[0] / FPS:.1f}s")
-        if self.video_audio is not None:
-            parts.append("视频音轨")
+        for i, audio in enumerate(self.audios):
+            parts.append(f"音频{i + 1} {audio['waveform'].shape[-1] / audio['sample_rate']:.1f}s")
+        for i, video in enumerate(self.videos):
+            sound = "，带音轨" if i < len(self.video_audios) and self.video_audios[i] is not None else ""
+            parts.append(f"视频{i + 1} {video.shape[0] / FPS:.1f}s{sound}")
         return "、".join(parts) or "无素材"
 
 
@@ -125,3 +132,20 @@ def file_signature(names: list[str]) -> str:
         else:
             parts.append(NONE)
     return "|".join(parts)
+
+
+def probe(path: str) -> dict:
+    with av.open(path) as container:
+        duration = container.duration / 1_000_000 if container.duration else None
+        video = container.streams.video[0] if container.streams.video else None
+        info = {
+            "duration": duration,
+            "has_audio": bool(container.streams.audio),
+            "has_video": video is not None,
+        }
+        if video is not None:
+            info["width"] = video.codec_context.width
+            info["height"] = video.codec_context.height
+            if duration is None and video.duration and video.time_base:
+                info["duration"] = float(video.duration * video.time_base)
+    return info
