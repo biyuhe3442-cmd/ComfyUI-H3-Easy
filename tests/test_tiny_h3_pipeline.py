@@ -221,3 +221,83 @@ def test_learned_upscaler_is_used(env):
     pipeline.run(_settings(pipeline, progressive=True), env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(),
                  None, learned_upscaler=Provider())
     assert calls == [((1, 24, 27, 16, 22), 20, 32)]
+
+
+def test_generate_node_end_to_end(env):
+    from h3easy.nodes import H3EasyGenerate
+    from h3easy.pipeline import MODE_IMAGE, MODE_REFERENCE
+    from h3easy.media import Media
+
+    # lazy model inputs: only the model of the selected mode is requested
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE) == ["image_model"]
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_REFERENCE) == ["reference_model"]
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=object()) == []
+    assert H3EasyGenerate.validate_inputs(width=500, height=320) != True  # noqa: E712
+
+    out = H3EasyGenerate.execute(
+        mode=MODE_IMAGE, prompt="hello", clip=FakeClip(), video_vae=FakeVideoVAE(), audio_vae=FakeAudioVAE(),
+        segments=2, segment_seconds=3.5, width=512, height=320, steps=4, seed=5, lock_audio=True,
+        progressive=True, tst=True, low_vram=True, sampler_name="euler", image_model=env["model"],
+        media=Media(audio=_audio(10.0)))
+    video, images, audio, report = out.args
+    components = video.get_components()
+    assert images.shape == (192, 320, 512, 3)
+    assert components.images.shape[0] == 192
+    assert float(components.frame_rate) == 24.0
+    assert components.audio["waveform"].shape[-1] == round(192 / 24 * 44100)
+    assert "锁定音频" in report
+
+    with pytest.raises(ValueError, match="参考模型"):
+        H3EasyGenerate.execute(
+            mode=MODE_REFERENCE, prompt="x", clip=FakeClip(), video_vae=FakeVideoVAE(), audio_vae=FakeAudioVAE(),
+            segments=1, segment_seconds=3.5, width=512, height=320, steps=4, seed=0, lock_audio=True,
+            progressive=False, tst=False, low_vram=False, image_model=env["model"])
+
+
+def test_media_loader_node(tmp_path):
+    import av
+    import numpy as np
+    from PIL import Image
+    import folder_paths
+    from h3easy.media import NONE
+    from h3easy.nodes import H3EasyMediaLoader
+
+    Image.fromarray(np.zeros((40, 60, 3), dtype=np.uint8)).save(tmp_path / "a.png")
+    rate = 16000
+    wave = np.ascontiguousarray(np.zeros((1, rate * 2), dtype=np.float32))
+    with av.open(str(tmp_path / "v.wav"), "w") as c:
+        stream = c.add_stream("pcm_s16le", rate=rate, layout="mono")
+        frame = av.AudioFrame.from_ndarray(wave, format="flt", layout="mono")
+        frame.sample_rate = rate
+        for packet in stream.encode(frame):
+            c.mux(packet)
+        for packet in stream.encode(None):
+            c.mux(packet)
+    with av.open(str(tmp_path / "c.mp4"), "w") as c:
+        stream = c.add_stream("libx264", rate=12)
+        stream.width, stream.height, stream.pix_fmt = 64, 48, "yuv420p"
+        for i in range(24):
+            img = np.full((48, 64, 3), i * 10, dtype=np.uint8)
+            for packet in stream.encode(av.VideoFrame.from_ndarray(img, format="rgb24")):
+                c.mux(packet)
+        for packet in stream.encode(None):
+            c.mux(packet)
+
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+    try:
+        kwargs = {name: NONE for name in ["last_frame"] + [f"ref_image_{i}" for i in range(1, 10)]}
+        kwargs.update(first_frame="a.png", ref_image_2="a.png", audio_file="v.wav", video_file="c.mp4")
+        assert H3EasyMediaLoader.validate_inputs(**kwargs) is True
+        assert "找不到文件" in H3EasyMediaLoader.validate_inputs(**dict(kwargs, ref_image_3="missing.png"))
+        media = H3EasyMediaLoader.execute(**kwargs).args[0]
+    finally:
+        folder_paths.set_input_directory(old)
+    assert media.first_frame.shape == (1, 40, 60, 3)
+    assert media.last_frame is None
+    assert len(media.ref_images) == 1
+    assert media.audio["sample_rate"] == rate and media.audio["waveform"].shape[-1] == rate * 2
+    # 2 s at 12 fps -> 48 frames at 24 fps, every source frame shown twice
+    assert media.video.shape == (48, 48, 64, 3)
+    assert torch.equal(media.video[0], media.video[1])
+    assert media.video_audio is None

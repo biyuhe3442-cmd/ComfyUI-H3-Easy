@@ -29,8 +29,7 @@ class H3EasyMediaLoader(io.ComfyNode):
         videos = [NONE] + media_io.list_inputs(["video"])
 
         def image_input(name, label, tooltip):
-            return io.Combo.Input(name, options=images, default=NONE, upload=io.UploadType.image,
-                                  display_name=label, tooltip=tooltip)
+            return io.Combo.Input(name, options=images, default=NONE, display_name=label, tooltip=tooltip)
 
         inputs = [
             image_input("first_frame", "首帧图", "图文模式：视频从这张图开始。"),
@@ -40,18 +39,17 @@ class H3EasyMediaLoader(io.ComfyNode):
             inputs.append(image_input(f"ref_image_{i}", f"参考图{i}",
                                       f"参考模式：提示词里用 <Picture {i}> 指代这张图。"))
         inputs += [
-            io.Combo.Input("audio_file", options=audios, default=NONE, upload=io.UploadType.audio,
-                           display_name="音频",
+            io.Combo.Input("audio_file", options=audios, default=NONE, display_name="音频",
                            tooltip="图文模式：锁定音频（引导口型，最终输出原音频）。参考模式：作为参考音频。"),
-            io.Combo.Input("video_file", options=videos, default=NONE, upload=io.UploadType.video,
-                           display_name="视频",
+            io.Combo.Input("video_file", options=videos, default=NONE, display_name="视频",
                            tooltip="参考模式：画面作为参考视频（最多读取 15 秒）。图文模式：没有单独音频时，用它的音轨锁定音频。"),
         ]
         return io.Schema(
             node_id="H3EasyMediaLoader",
             display_name="H3 素材加载器",
             category=CATEGORY,
-            description="加载首尾帧、多张参考图、音频和视频，打包后接到「H3 一键生成」。不用的槽位保持「无」。",
+            description="可视化素材面板：首帧/尾帧、最多 9 张参考图、音频、视频。点击卡片或直接拖入文件，"
+                        "打包后接到「H3 一键生成」。",
             inputs=inputs,
             outputs=[MediaType.Output(display_name="素材")],
         )

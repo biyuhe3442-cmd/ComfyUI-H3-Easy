@@ -1,5 +1,7 @@
 """ComfyUI-H3-Easy: one-node MiniMax H3 video + audio generation."""
 
+WEB_DIRECTORY = "./web"
+
 try:
     from comfy_api.latest import ComfyExtension
 except ImportError:  # imported outside ComfyUI, e.g. by pytest

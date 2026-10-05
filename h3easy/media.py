@@ -14,7 +14,7 @@ import folder_paths
 from .timing import FPS
 
 NONE = "无"
-REF_SLOTS = 6
+REF_SLOTS = 9
 VIDEO_MAX_SECONDS = 15.0
 VIDEO_MAX_PIXELS = 640 * 640  # reference video tokens ride through every step; keep them light
 
