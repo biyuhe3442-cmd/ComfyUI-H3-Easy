@@ -37,14 +37,14 @@ const STYLE = `
 .h3e-head{display:flex;align-items:baseline;gap:8px}
 .h3e-title{font-weight:600;font-size:13px;white-space:nowrap;flex-shrink:0}
 .h3e-hint{color:var(--descrip-text,#999);font-size:11px}
-.h3e-rows{display:flex;flex-direction:column;gap:6px}
-.h3e-jrow{display:flex;gap:6px;align-items:flex-start}
-.h3e-jrow>*{min-width:0}
+.h3e-grid{display:grid;gap:6px;align-items:start}
+.h3e-grid>*{min-width:0}
 .h3e-card{position:relative;box-sizing:border-box;min-width:0;min-height:0;border:1px dashed var(--border-color,#555);border-radius:8px;background:var(--comfy-input-bg,#222);overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;color:var(--descrip-text,#999);transition:border-color .15s,background .15s}
 .h3e-card:hover,.h3e-over{border-color:#4a9eff!important;background:rgba(74,158,255,.08)}
 .h3e-filled{border-style:solid}
 .h3e-card img,.h3e-card video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#111;display:block;pointer-events:none}
+.h3e-keep{position:absolute;box-sizing:border-box;border:1.5px dashed rgba(255,255,255,.9);box-shadow:0 0 0 999px rgba(0,0,0,.6);pointer-events:none}
 .h3e-aspects{display:flex;flex-direction:column;gap:4px}
 .h3e-aspect{font-size:11px;color:var(--descrip-text,#aaa);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .h3e-aspect.h3e-bad{color:#f0b35a}
@@ -237,34 +237,23 @@ function mediaSize(name, kind, onReady) {
     return null;
 }
 
-// same as mediaSize, as a promise
-function loadSize(name, kind) {
-    const known = SIZES.get(name);
-    if (known !== undefined) return Promise.resolve(known);
-    mediaSize(name, kind, () => {});
-    return SIZES.get(name);
-}
-
 const clampRatio = (ratio) => Math.min(2.5, Math.max(0.4, ratio));
 const ratioOf = (size) => (size && size.w > 0 && size.h > 0 ? clampRatio(size.w / size.h) : null);
 
-// A row where every card keeps its own aspect ratio and all cards share one height
-// (flex-grow = ratio). Rows whose ratios add up to less than ``minRatio`` get a spacer
-// on the right, so a few portrait images never make the row too tall.
-function justifiedRow(items, minRatio) {
-    const row = el("div", "h3e-jrow");
-    let total = 0;
-    for (const { item, ratio } of items) {
-        item.style.flex = `${ratio} 1 0`;
-        total += ratio;
-        row.append(item);
-    }
-    if (total < minRatio) {
-        const spacer = el("div");
-        spacer.style.flex = `${minRatio - total} 1 0`;
-        row.append(spacer);
-    }
-    return row;
+// Equal columns, one cell shape for the whole grid, so rows and columns line up.
+function grid(columns, items) {
+    const box = el("div", "h3e-grid");
+    box.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+    box.append(...items);
+    return box;
+}
+
+// cell shape for a grid: the typical (median) shape of its images, so a set of portraits gets
+// portrait cells and only an odd one out shows thin bars
+function cellRatio(ratios, fallback) {
+    const known = ratios.filter(Boolean).sort((a, b) => a - b);
+    if (!known.length) return fallback;
+    return Math.min(2, Math.max(0.5, known[Math.floor((known.length - 1) / 2)]));
 }
 
 // output size with the image's aspect ratio and about the same pixel area, on H3's 32-pixel grid
@@ -344,20 +333,6 @@ class MediaPanel {
         if (!name) return;
         setValue(this.node, slot, name);
         this.render();
-        // the first frame (or a lone last frame) decides the video's shape: match the output to it
-        if (slot === "first_frame" || !getValue(this.node, "first_frame")) this.alignOutput(slot);
-    }
-
-    async alignOutput(slot) {
-        const value = getValue(this.node, slot);
-        const size = value && await loadSize(value, "image");
-        if (!size || getValue(this.node, slot) !== value || this.mode() !== "image") return;
-        const generator = linkedGenerators(this.node)[0];
-        const plan = this.aspectPlan(size, this.outputSize(generator), generator);
-        if (!plan) return;
-        plan.apply();
-        const label = FRAMES.find(([name]) => name === slot)[1];
-        this.toast(`已按${label}比例把${plan.target}`, 5000);
     }
 
     // replace entry ``index`` (or append when index === list length) and append any extra files
@@ -452,9 +427,9 @@ class MediaPanel {
         const ratios = values.map((value) => value && ratioOf(mediaSize(value, "image", () => this.renderSoon())));
         const output = this.outputSize(linkedGenerators(this.node)[0]);
         const outputRatio = output?.w > 0 && output?.h > 0 ? clampRatio(output.w / output.h) : null;
+        // both cards share one shape: the first frame's, else the last frame's, else the output's
+        const ratio = ratios[0] || ratios[1] || outputRatio || 16 / 10;
         const items = FRAMES.map(([slot, label], i) => {
-            // a card shows its image's own shape; an empty card copies the other frame, then the output size
-            const ratio = ratios[i] || ratios[1 - i] || outputRatio || 16 / 10;
             const card = values[i]
                 ? this.imageCard(values[i], "h3e-frame", label, (f) => this.setSingle(slot, f), () => {
                     setValue(this.node, slot, null);
@@ -462,12 +437,32 @@ class MediaPanel {
                 })
                 : this.addCard("image", label, "h3e-frame", false, (f) => this.setSingle(slot, f));
             card.style.aspectRatio = String(ratio);
-            return { item: card, ratio };
+            const size = values[i] && mediaSize(values[i], "image", () => this.renderSoon());
+            if (size && output?.w > 0 && output?.h > 0) this.cropPreview(card, size, ratio, output.w / output.h);
+            return card;
         });
-        section.append(justifiedRow(items, 1.5));
+        section.append(grid(2, items));
         const aspects = this.frameAspects();
         if (aspects) section.append(aspects);
         return section;
+    }
+
+    // Dim the parts of a frame that will be cut off: the run crops it to the output's aspect ratio.
+    cropPreview(card, size, cardRatio, outRatio) {
+        const imgRatio = size.w / size.h;
+        if (Math.abs(Math.log(imgRatio / outRatio)) <= 0.05) return;
+        // the image box inside the card (object-fit: contain), then the kept part of the image
+        const iw = imgRatio > cardRatio ? 1 : imgRatio / cardRatio;
+        const ih = imgRatio > cardRatio ? cardRatio / imgRatio : 1;
+        const kw = imgRatio > outRatio ? outRatio / imgRatio : 1;
+        const kh = imgRatio > outRatio ? 1 : imgRatio / outRatio;
+        const keep = el("div", "h3e-keep");
+        Object.assign(keep.style, {
+            width: `${iw * kw * 100}%`, height: `${ih * kh * 100}%`,
+            left: `${(1 - iw * kw) * 50}%`, top: `${(1 - ih * kh) * 50}%`,
+        });
+        keep.title = "运行时只保留虚线框内的部分（居中裁切成输出比例）";
+        card.querySelector("img")?.after(keep);
     }
 
     // where the generator's width/height come from: its own widgets, a Resolution Selector, or another node
@@ -575,18 +570,19 @@ class MediaPanel {
             } else if (output.kind === "external") {
                 line.classList.add("h3e-bad");
                 line.textContent = `${label} ${size.w}×${size.h}（${orientation}）。宽高由连接的「${output.source?.title || "其他节点"}」决定，`
-                    + `请确认它的比例和${label}一致，否则${slot === "first_frame" ? "会被拉伸变形" : "会被居中裁切"}`;
+                    + `比例不同时会居中裁切成输出比例`;
             } else if (Math.abs(Math.log((size.w / size.h) / (output.w / output.h))) > 0.05) {
                 line.classList.add("h3e-bad");
                 const from = output.kind === "selector" ? "（分辨率选择器）" : "";
-                line.append(el("span", "", `⚠ ${label} ${size.w}×${size.h}（${orientation}）和输出 ${output.w}×${output.h}${from} 比例不同，`
-                    + (slot === "first_frame" ? "会被拉伸变形" : "会被居中裁切")));
-                if (!offered) {
-                    const button = this.fixButton(label, size, output, generator);
-                    if (button) {
-                        offered = true;
-                        line.append(button);
-                    }
+                // with a first frame, only it may reshape the output (switching to the last frame's
+                // ratio would just break the first frame)
+                const skip = offered || (slot === "last_frame" && getValue(this.node, "first_frame"));
+                const button = skip ? null : this.fixButton(label, size, output, generator);
+                line.append(el("span", "", `⚠ ${label} ${size.w}×${size.h}（${orientation}）和输出 ${output.w}×${output.h}${from} 比例不同：`
+                    + "输出保持你设的尺寸，图片居中裁切，变暗的部分会被裁掉。" + (button ? "想保留整张图可以" : "")));
+                if (button) {
+                    offered = true;
+                    line.append(button);
                 }
             } else {
                 line.classList.add("h3e-good");
@@ -610,20 +606,20 @@ class MediaPanel {
     refImagesSection() {
         const refs = this.list(REFS);
         const section = this.section(`参考图 ${refs.length}/${LIMIT.image}`, "提示词里写 <Picture N>");
+        const ratio = cellRatio(refs.map((value) => ratioOf(mediaSize(value, "image", () => this.renderSoon()))), 1);
         const items = refs.map((value, i) => {
-            const ratio = ratioOf(mediaSize(value, "image", () => this.renderSoon())) || 1;
             const card = this.imageCard(value, "", this.tag(`<Picture ${i + 1}>`, "h3e-badge", `图${i + 1}`),
                 (f) => this.putInList(REFS, i, f), () => this.removeFromList(REFS, i));
             card.style.aspectRatio = String(ratio);
-            return { item: card, ratio };
+            return card;
         });
         const add = (label, shape) => this.addCard("image", label, shape, true, (f) => this.putInList(REFS, refs.length, f));
         let addRow = null;
         if (refs.length < LIMIT.image) {
             if (refs.length % 3) {
                 const card = add("添加", "");
-                card.style.aspectRatio = "1";
-                items.push({ item: card, ratio: 1 });
+                card.style.aspectRatio = String(ratio);
+                items.push(card);
             } else {
                 // a lone "add" card gets a slim full-width row instead of a big empty tile
                 addRow = refs.length
@@ -631,11 +627,7 @@ class MediaPanel {
                     : add(`添加参考图（可多选，最多 ${LIMIT.image} 张）`, "h3e-add-row h3e-add-tall");
             }
         }
-        if (items.length) {
-            const rows = el("div", "h3e-rows");
-            for (let i = 0; i < items.length; i += 3) rows.append(justifiedRow(items.slice(i, i + 3), 2.4));
-            section.append(rows);
-        }
+        if (items.length) section.append(grid(3, items));
         if (addRow) section.append(addRow);
         return section;
     }
@@ -653,11 +645,11 @@ class MediaPanel {
     refVideosSection(tracks) {
         const videos = this.list(VIDEOS);
         const section = this.section(`参考视频 ${videos.length}/${LIMIT.video}`, `提示词里写 <Video N>；最多读 ${VIDEO_READ_SECONDS} 秒`);
+        // the browser knows rotated phone videos; the server probe covers codecs the browser can't play
+        const ratio = cellRatio(videos.map((value, i) => ratioOf(mediaSize(value, "video", () => this.renderSoon()))
+            || ratioOf(tracks[i].info && { w: tracks[i].info.width, h: tracks[i].info.height })), 16 / 9);
         const items = videos.map((value, i) => {
-            // the browser knows rotated phone videos; the server probe covers codecs the browser can't play
             const info = tracks[i].info;
-            const ratio = ratioOf(mediaSize(value, "video", () => this.renderSoon()))
-                || ratioOf(info && { w: info.width, h: info.height }) || 16 / 9;
             const item = el("div", "h3e-vitem");
             const card = el("div", "h3e-card h3e-filled");
             card.style.aspectRatio = String(ratio);
@@ -694,16 +686,16 @@ class MediaPanel {
                 caption.append(audioTag ? this.tag(`<Audio ${audioTag}>`, "h3e-chip", `音频${audioTag}`) : el("span", "", "无声"));
             }
             item.append(card, caption);
-            return { item, ratio };
+            return item;
         });
         const add = (label, shape) => this.addCard("video", label, shape, true, (f) => this.putInList(VIDEOS, videos.length, f));
         if (items.length) {
             if (videos.length < LIMIT.video) {
                 const card = add("添加", "");
-                card.style.aspectRatio = "1";
-                items.push({ item: card, ratio: 1 });
+                card.style.aspectRatio = String(ratio);
+                items.push(card);
             }
-            section.append(justifiedRow(items, 3.6));
+            section.append(grid(3, items));
         } else {
             section.append(add(`添加参考视频（可多选，最多 ${LIMIT.video} 段）`, "h3e-add-row h3e-add-tall"));
         }

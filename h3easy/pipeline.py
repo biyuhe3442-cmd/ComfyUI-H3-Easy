@@ -83,6 +83,19 @@ def aspect_mismatch(image: torch.Tensor, width: int, height: int, tolerance: flo
     return abs(math.log((w / h) / (width / height))) > tolerance
 
 
+def crop_to_aspect(image: torch.Tensor, width: int, height: int) -> torch.Tensor:
+    """Center-crop an IMAGE [B, H, W, C] to the width:height aspect ratio (no resizing)."""
+    h, w = image.shape[1], image.shape[2]
+    target = width / height
+    if w / h > target:  # wider than the output: trim left and right
+        new_w = max(1, round(h * target))
+        x = (w - new_w) // 2
+        return image[:, :, x:x + new_w]
+    new_h = max(1, round(w / target))
+    y = (h - new_h) // 2
+    return image[:, y:y + new_h]
+
+
 def _sigmas(model, scheduler: str, steps: int) -> torch.Tensor:
     return comfy.samplers.calculate_sigmas(model.get_model_object("model_sampling"), scheduler, steps).cpu()
 
@@ -206,11 +219,19 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
     if not image_mode and (media.first_frame is not None or media.last_frame is not None):
         report.add("提示：参考模式不使用首帧/尾帧（要用请切到图文模式）")
     if image_mode:
-        for label, frame, effect in (("首帧", media.first_frame, "拉伸变形"), ("尾帧", media.last_frame, "居中裁切")):
+        # The output keeps the size you set. Core would stretch a first frame of another shape,
+        # so crop both frames to the output's aspect ratio first (keeps the middle, no distortion).
+        cropped = {}
+        for label, name in (("首帧", "first_frame"), ("尾帧", "last_frame")):
+            frame = getattr(media, name)
             if frame is not None and aspect_mismatch(frame, settings.width, settings.height):
+                cropped[name] = crop_to_aspect(frame, settings.width, settings.height)
                 h, w = frame.shape[1], frame.shape[2]
-                report.add(f"提示：{label} {w}×{h} 和输出 {settings.width}×{settings.height} 比例不同，会被{effect}；"
-                           f"可以在素材面板点「按{label}比例改」")
+                ch, cw = cropped[name].shape[1], cropped[name].shape[2]
+                report.add(f"{label} {w}×{h} 和输出 {settings.width}×{settings.height} 比例不同：已居中裁切成 {cw}×{ch}"
+                           f"（只保留中间部分，不拉伸）")
+        if cropped:
+            media = dataclasses.replace(media, **cropped)
 
     # 1. conditioning for every segment (text encoder runs here, then can be unloaded)
     builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height, media,

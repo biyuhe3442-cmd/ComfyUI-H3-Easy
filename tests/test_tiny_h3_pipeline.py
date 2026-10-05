@@ -163,7 +163,19 @@ def test_aspect_warning_for_portrait_first_frame(env):
     media = Media(first_frame=torch.rand(1, 640, 360, 3))
     result = pipeline.run(_settings(pipeline, progressive=False), env["model"], FakeClip(), FakeVideoVAE(),
                           FakeAudioVAE(), media)
-    assert "首帧 360×640 和输出 512×320 比例不同，会被拉伸变形" in result.report
+    assert "首帧 360×640 和输出 512×320 比例不同：已居中裁切成 360×225" in result.report
+    assert result.images.shape[1:3] == (320, 512)  # the output keeps the size that was set
+
+
+def test_crop_to_aspect_keeps_the_middle():
+    from h3easy.pipeline import crop_to_aspect
+    portrait = torch.arange(1280 * 720, dtype=torch.float32).reshape(1, 1280, 720, 1)
+    out = crop_to_aspect(portrait, 1024, 576)  # landscape output: trim top and bottom
+    assert out.shape[1:3] == (405, 720)
+    assert torch.equal(out[0, 0], portrait[0, (1280 - 405) // 2])
+    landscape = torch.zeros(1, 540, 960, 3)
+    assert crop_to_aspect(landscape, 576, 1024).shape[1:3] == (540, 304)  # portrait output: trim the sides
+    assert crop_to_aspect(landscape, 1024, 576).shape[1:3] == (540, 960)
 
 
 def test_three_segments_lock_audio_tst(env):
