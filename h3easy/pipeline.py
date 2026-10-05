@@ -183,6 +183,10 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         report.add("参考模式：音频只作为参考，最终输出 H3 生成的声音")
     if not image_mode and not media.ref_images and media.video is None and media.audio is None:
         report.add("提示：参考模式没有任何参考素材，效果等同文生视频")
+    if image_mode and media.ref_images:
+        report.add("提示：图文模式不使用参考图（要用参考图请切到参考模式）")
+    if not image_mode and (media.first_frame is not None or media.last_frame is not None):
+        report.add("提示：参考模式不使用首帧/尾帧（要用请切到图文模式）")
 
     # 1. conditioning for every segment (text encoder runs here, then can be unloaded)
     builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height, media,

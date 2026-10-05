@@ -1,0 +1,18 @@
+[project]
+name = "comfyui-h3-easy"
+version = "0.1.0"
+description = "One-node MiniMax H3 video+audio generation for ComfyUI: text/first-last-frame and reference modes, audio lock, multi-segment continuation, progressive speed-up, TST."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/biyuhe3442-cmd/ComfyUI-H3-Easy"
+
+[tool.comfy]
+PublisherId = "biyuhe3442-cmd"
+DisplayName = "H3 Easy"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
