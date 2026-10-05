@@ -142,8 +142,21 @@ def test_single_segment_progressive(env):
     assert torch.isfinite(result.images).all()
     assert result.audio["waveform"].shape[-1] == round(90 / 24 * 32000)
     assert "渐进加速" in result.report
+    # 480x300 first frame vs 512x320 output: same 1.6 ratio, no warning
+    assert "比例不同" not in result.report
     # pixel upscale decoded the low-resolution clean estimate (352x256 -> latent 16x22)
     assert (1, 24, 27, 16, 22) in vae.decodes
+
+
+def test_aspect_warning_for_portrait_first_frame(env):
+    pipeline = env["pipeline"]
+    from h3easy.media import Media
+    assert pipeline.aspect_mismatch(torch.zeros(1, 1280, 720, 3), 1024, 576)
+    assert not pipeline.aspect_mismatch(torch.zeros(1, 576, 1024, 3), 1344, 768)
+    media = Media(first_frame=torch.rand(1, 640, 360, 3))
+    result = pipeline.run(_settings(pipeline, progressive=False), env["model"], FakeClip(), FakeVideoVAE(),
+                          FakeAudioVAE(), media)
+    assert "首帧 360×640 和输出 512×320 比例不同，会被拉伸变形" in result.report
 
 
 def test_three_segments_lock_audio_tst(env):

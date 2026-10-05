@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -73,6 +74,12 @@ class Reporter:
 
     def text(self) -> str:
         return "\n".join(self.lines)
+
+
+def aspect_mismatch(image: torch.Tensor, width: int, height: int, tolerance: float = 0.05) -> bool:
+    """True when an IMAGE [B, H, W, C] differs from the output aspect ratio by more than ~5%."""
+    h, w = image.shape[1], image.shape[2]
+    return abs(math.log((w / h) / (width / height))) > tolerance
 
 
 def _sigmas(model, scheduler: str, steps: int) -> torch.Tensor:
@@ -188,6 +195,12 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         report.add("提示：图文模式不使用参考图/参考视频（要用请切到参考模式）")
     if not image_mode and (media.first_frame is not None or media.last_frame is not None):
         report.add("提示：参考模式不使用首帧/尾帧（要用请切到图文模式）")
+    if image_mode:
+        for label, frame, effect in (("首帧", media.first_frame, "拉伸变形"), ("尾帧", media.last_frame, "居中裁切")):
+            if frame is not None and aspect_mismatch(frame, settings.width, settings.height):
+                h, w = frame.shape[1], frame.shape[2]
+                report.add(f"提示：{label} {w}×{h} 和输出 {settings.width}×{settings.height} 比例不同，会被{effect}；"
+                           f"可以在素材面板点「按{label}比例改」")
 
     # 1. conditioning for every segment (text encoder runs here, then can be unloaded)
     builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height, media,

@@ -45,7 +45,13 @@ const STYLE = `
 .h3e-frame{aspect-ratio:16/10}
 .h3e-square{aspect-ratio:1/1}
 .h3e-wide{aspect-ratio:16/10}
-.h3e-card img,.h3e-card video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.h3e-card img,.h3e-card video{width:100%;height:100%;object-fit:contain;background:#111;display:block;pointer-events:none}
+.h3e-aspects{display:flex;flex-direction:column;gap:4px}
+.h3e-aspect{font-size:11px;color:var(--descrip-text,#aaa);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.h3e-aspect.h3e-bad{color:#f0b35a}
+.h3e-aspect.h3e-good{color:#7fd17f}
+.h3e-fit{border:1px solid #4a9eff;background:rgba(74,158,255,.15);color:#cfe3ff;border-radius:6px;padding:1px 8px;cursor:pointer;font:inherit;font-size:11px}
+.h3e-fit:hover{background:rgba(74,158,255,.3)}
 .h3e-empty{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;padding:4px}
 .h3e-plus{font-size:20px;line-height:1;opacity:.8}
 .h3e-add-row{min-height:38px;flex-direction:row;gap:6px}
@@ -186,6 +192,31 @@ function mediaInfo(name, onReady) {
     INFO.set(name, pending);
     pending.then(onReady);
     return null;
+}
+
+const SIZES = new Map();
+function imageSize(name, onReady) {
+    if (SIZES.has(name)) {
+        const size = SIZES.get(name);
+        return size === "pending" ? null : size;
+    }
+    SIZES.set(name, "pending");
+    const img = new Image();
+    img.onload = () => {
+        SIZES.set(name, { w: img.naturalWidth, h: img.naturalHeight });
+        onReady();
+    };
+    img.onerror = () => SIZES.set(name, null);
+    img.src = viewUrl(name);
+    return null;
+}
+
+// output size with the image's aspect ratio and about the same pixel area, on H3's 32-pixel grid
+function sizeForAspect(image, output) {
+    const area = output.w * output.h;
+    const ratio = image.w / image.h;
+    const snap = (v) => Math.min(2048, Math.max(256, Math.round(v / 32) * 32));
+    return { w: snap(Math.sqrt(area * ratio)), h: snap(Math.sqrt(area / ratio)) };
 }
 
 function linkedGenerators(node) {
@@ -353,7 +384,55 @@ class MediaPanel {
                 : this.addCard("image", label, "h3e-frame", false, (f) => this.setSingle(slot, f)));
         }
         section.append(row);
+        const aspects = this.frameAspects();
+        if (aspects) section.append(aspects);
         return section;
+    }
+
+    frameAspects() {
+        const generator = linkedGenerators(this.node)[0];
+        const output = generator
+            ? { w: Number(findWidget(generator, "width")?.value), h: Number(findWidget(generator, "height")?.value) }
+            : null;
+        const box = el("div", "h3e-aspects");
+        let offered = false;
+        for (const [slot, label] of FRAMES) {
+            const value = getValue(this.node, slot);
+            const size = value && imageSize(value, () => this.render());
+            if (!size) continue;
+            const orientation = size.w > size.h ? "横图" : size.w < size.h ? "竖图" : "方图";
+            const line = el("div", "h3e-aspect");
+            if (!output || !output.w || !output.h) {
+                line.textContent = `${label} ${size.w}×${size.h}（${orientation}）`;
+            } else if (Math.abs(Math.log((size.w / size.h) / (output.w / output.h))) > 0.05) {
+                line.classList.add("h3e-bad");
+                line.append(el("span", "", `⚠ ${label} ${size.w}×${size.h}（${orientation}）和输出 ${output.w}×${output.h} 比例不同，`
+                    + (slot === "first_frame" ? "会被拉伸变形" : "会被居中裁切")));
+                if (!offered) {
+                    offered = true;
+                    const target = sizeForAspect(size, output);
+                    const fit = el("button", "h3e-fit", `按${label}比例改为 ${target.w}×${target.h}`);
+                    fit.title = "修改「H3 一键生成」的宽和高（画面总面积基本不变）";
+                    fit.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        for (const [name, v] of [["width", target.w], ["height", target.h]]) {
+                            const widget = findWidget(generator, name);
+                            if (!widget) continue;
+                            widget.value = v;
+                            widget.callback?.(v);
+                        }
+                        generator.setDirtyCanvas?.(true, true);
+                        this.render();
+                    });
+                    line.append(fit);
+                }
+            } else {
+                line.classList.add("h3e-good");
+                line.textContent = `✓ ${label} ${size.w}×${size.h} 和输出 ${output.w}×${output.h} 比例一致`;
+            }
+            box.append(line);
+        }
+        return box.childElementCount ? box : null;
     }
 
     lockAudioSection() {
@@ -547,14 +626,24 @@ class MediaPanel {
     }
 
     fit() {
-        requestAnimationFrame(() => {
+        if (this.fitPending) return;
+        this.fitPending = true;
+        // two frames: let the DOM widget pick up the node width before measuring
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            this.fitPending = false;
             const node = this.node;
             const want = node.computeSize?.();
             if (want && node.size && Math.abs(node.size[1] - want[1]) > 2) {
                 node.setSize([node.size[0], want[1]]);
             }
             node.setDirtyCanvas?.(true, true);
-        });
+        }));
+    }
+
+    watchSize() {
+        if (typeof ResizeObserver === "undefined") return;
+        this.observer = new ResizeObserver(() => this.fit());
+        this.observer.observe(this.inner);
     }
 }
 
@@ -569,10 +658,11 @@ app.registerExtension({
         if (type === GENERATOR && !node.__h3eWatch) {
             // re-render the connected panel when the mode or the media link changes
             node.__h3eWatch = true;
-            const modeWidget = findWidget(node, "mode");
-            if (modeWidget) {
-                const callback = modeWidget.callback;
-                modeWidget.callback = function (...args) {
+            for (const name of ["mode", "width", "height"]) {
+                const widget = findWidget(node, name);
+                if (!widget) continue;
+                const callback = widget.callback;
+                widget.callback = function (...args) {
                     const result = callback?.apply(this, args);
                     queueMicrotask(() => refreshLoaders(node));
                     return result;
@@ -614,6 +704,18 @@ app.registerExtension({
             queueMicrotask(() => panel.render());
             return result;
         };
+        const resize = node.onResize;
+        node.onResize = function (...args) {
+            const result = resize?.apply(this, args);
+            panel.fit();
+            return result;
+        };
+        const removed = node.onRemoved;
+        node.onRemoved = function (...args) {
+            panel.observer?.disconnect();
+            return removed?.apply(this, args);
+        };
+        panel.watchSize();
         panel.render();
         node.setSize([Math.max(node.size?.[0] || 0, 420), node.computeSize()[1]]);
     },
