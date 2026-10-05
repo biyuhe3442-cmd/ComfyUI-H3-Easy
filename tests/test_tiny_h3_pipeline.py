@@ -109,6 +109,13 @@ def _tiny_model():
     with torch.no_grad():
         for p in model.parameters():
             p.copy_(torch.randn(p.shape, generator=g) * 0.02)
+        # Core allocates these buffers with torch.empty and a real checkpoint fills them; left as
+        # is they hold whatever memory was there and occasionally turn the run into NaN
+        dit = model.diffusion_model
+        inv_freq = dit.rope.inv_freq
+        inv_freq.copy_(1.0 / (10000 ** (torch.arange(inv_freq.numel(), dtype=torch.float32) / inv_freq.numel())))
+        if hasattr(dit, "adaln_t_table"):
+            dit.adaln_t_table.copy_(torch.randn(dit.adaln_t_table.shape, generator=g) * 0.02)
     model.to(torch.float32)
     return comfy.model_patcher.ModelPatcher(model, load_device=torch.device("cpu"), offload_device=torch.device("cpu"))
 
@@ -241,9 +248,9 @@ def test_generate_node_end_to_end(env):
     from h3easy.pipeline import MODE_IMAGE, MODE_REFERENCE
     from h3easy.media import Media
 
-    # lazy model inputs: only the model of the selected mode is requested
-    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE) == ["image_model"]
-    assert H3EasyGenerate.check_lazy_status(mode=MODE_REFERENCE) == ["reference_model"]
+    # lazy model inputs: only the (linked) model of the selected mode is requested
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=None, reference_model=None) == ["image_model"]
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_REFERENCE, image_model=None, reference_model=None) == ["reference_model"]
     assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=object()) == []
     # width/height may be linked (None during Core validation) or unaligned: no validation hook,
     # the pipeline snaps them to the 32-pixel grid instead
@@ -373,3 +380,27 @@ def test_unaligned_size_is_snapped(env):
                           FakeVideoVAE(), FakeAudioVAE(), None)
     assert result.images.shape[1:3] == (320, 512)
     assert "500×330 → 512×320" in result.report
+
+
+def test_lazy_model_input_only_requested_when_linked():
+    from h3easy.nodes import H3EasyGenerate
+    from h3easy.pipeline import MODE_IMAGE, MODE_REFERENCE
+
+    # linked but not evaluated yet -> key present with None: ask for it
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=None) == ["image_model"]
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_REFERENCE, reference_model=None) == ["reference_model"]
+    # nothing linked (or loader muted / bypassed) -> key absent: do not ask, execute() explains
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE) == []
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, reference_model=None) == []
+    # already evaluated
+    assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=object()) == []
+
+
+def test_missing_model_error_is_explained():
+    from h3easy.nodes import H3EasyGenerate
+    from h3easy.pipeline import MODE_IMAGE
+
+    with pytest.raises(ValueError, match="图文模型\\(fl2va\\)」输入没有收到模型"):
+        H3EasyGenerate.execute(mode=MODE_IMAGE, prompt="", clip=None, video_vae=None, audio_vae=None,
+                               segments=1, segment_seconds=6.0, width=1024, height=576, steps=20, seed=0,
+                               lock_audio=True, progressive=True, tst=False, low_vram=True)

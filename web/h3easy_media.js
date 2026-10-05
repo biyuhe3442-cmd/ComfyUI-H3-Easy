@@ -237,6 +237,14 @@ function mediaSize(name, kind, onReady) {
     return null;
 }
 
+// same as mediaSize, as a promise
+function loadSize(name, kind) {
+    const known = SIZES.get(name);
+    if (known !== undefined) return Promise.resolve(known);
+    mediaSize(name, kind, () => {});
+    return SIZES.get(name);
+}
+
 const clampRatio = (ratio) => Math.min(2.5, Math.max(0.4, ratio));
 const ratioOf = (size) => (size && size.w > 0 && size.h > 0 ? clampRatio(size.w / size.h) : null);
 
@@ -290,6 +298,7 @@ function loadersFeeding(generator) {
 class MediaPanel {
     constructor(node) {
         this.node = node;
+        this.toastEl = el("span", "h3e-toast");  // kept across re-renders
         this.root = el("div", "h3e-panel");
         this.inner = el("div", "h3e-inner");
         this.root.append(this.inner);
@@ -335,6 +344,20 @@ class MediaPanel {
         if (!name) return;
         setValue(this.node, slot, name);
         this.render();
+        // the first frame (or a lone last frame) decides the video's shape: match the output to it
+        if (slot === "first_frame" || !getValue(this.node, "first_frame")) this.alignOutput(slot);
+    }
+
+    async alignOutput(slot) {
+        const value = getValue(this.node, slot);
+        const size = value && await loadSize(value, "image");
+        if (!size || getValue(this.node, slot) !== value || this.mode() !== "image") return;
+        const generator = linkedGenerators(this.node)[0];
+        const plan = this.aspectPlan(size, this.outputSize(generator), generator);
+        if (!plan) return;
+        plan.apply();
+        const label = FRAMES.find(([name]) => name === slot)[1];
+        this.toast(`已按${label}比例把${plan.target}`, 5000);
     }
 
     // replace entry ``index`` (or append when index === list length) and append any extra files
@@ -479,23 +502,27 @@ class MediaPanel {
         return { kind: "external", source };
     }
 
-    fixButton(label, size, output, generator) {
+    // how to give the output the image's aspect ratio: {target, title, apply}, or null when it already
+    // matches or the size comes from a node the panel can't change
+    aspectPlan(size, output, generator) {
+        if (!output || !generator) return null;
         if (output.kind === "widgets") {
+            if (Math.abs(Math.log((size.w / size.h) / (output.w / output.h))) <= 0.05) return null;
             const target = sizeForAspect(size, output);
-            const button = el("button", "h3e-fit", `按${label}比例改为 ${target.w}×${target.h}`);
-            button.title = "修改「H3 一键生成」的宽和高（画面总面积基本不变）";
-            button.addEventListener("click", (e) => {
-                e.stopPropagation();
-                for (const [name, v] of [["width", target.w], ["height", target.h]]) {
-                    const widget = findWidget(generator, name);
-                    if (!widget) continue;
-                    widget.value = v;
-                    widget.callback?.(v);
-                }
-                generator.setDirtyCanvas?.(true, true);
-                this.render();
-            });
-            return button;
+            return {
+                target: `输出改为 ${target.w}×${target.h}`,
+                title: "修改「H3 一键生成」的宽和高（画面总面积基本不变）",
+                apply: () => {
+                    for (const [name, v] of [["width", target.w], ["height", target.h]]) {
+                        const widget = findWidget(generator, name);
+                        if (!widget) continue;
+                        widget.value = v;
+                        widget.callback?.(v);
+                    }
+                    generator.setDirtyCanvas?.(true, true);
+                    this.render();
+                },
+            };
         }
         if (output.kind === "selector") {
             const ratio = size.w / size.h;
@@ -506,18 +533,30 @@ class MediaPanel {
             if (!options.length) return null;
             const best = options.reduce((a, b) => (Math.abs(Math.log(b.ratio / ratio)) < Math.abs(Math.log(a.ratio / ratio)) ? b : a));
             if (best.value === output.aspect.value) return null;
-            const button = el("button", "h3e-fit", `把分辨率选择器改成 ${best.label}`);
-            button.title = `宽高由「${output.source.title || output.source.type}」提供，改它的宽高比`;
-            button.addEventListener("click", (e) => {
-                e.stopPropagation();
-                output.aspect.value = best.value;
-                output.aspect.callback?.(best.value);
-                output.source.setDirtyCanvas?.(true, true);
-                this.render();
-            });
-            return button;
+            return {
+                target: `分辨率选择器改为 ${best.label}`,
+                title: `宽高由「${output.source.title || output.source.type}」提供，改它的宽高比`,
+                apply: () => {
+                    output.aspect.value = best.value;
+                    output.aspect.callback?.(best.value);
+                    output.source.setDirtyCanvas?.(true, true);
+                    this.render();
+                },
+            };
         }
         return null;
+    }
+
+    fixButton(label, size, output, generator) {
+        const plan = this.aspectPlan(size, output, generator);
+        if (!plan) return null;
+        const button = el("button", "h3e-fit", `按${label}比例把${plan.target}`);
+        button.title = plan.title;
+        button.addEventListener("click", (e) => {
+            e.stopPropagation();
+            plan.apply();
+        });
+        return button;
     }
 
     frameAspects() {
@@ -724,12 +763,11 @@ class MediaPanel {
         }
     }
 
-    toast(text) {
-        if (!this.toastEl) return;
+    toast(text, ms = 1500) {
         this.toastEl.textContent = text;
         this.toastEl.classList.add("h3e-show");
         clearTimeout(this.toastTimer);
-        this.toastTimer = setTimeout(() => this.toastEl.classList.remove("h3e-show"), 1500);
+        this.toastTimer = setTimeout(() => this.toastEl.classList.remove("h3e-show"), ms);
     }
 
     renderSoon() {
@@ -777,7 +815,6 @@ class MediaPanel {
         }
 
         const foot = el("div", "h3e-foot");
-        this.toastEl = el("span", "h3e-toast");
         const clear = el("button", "h3e-btn", "清空全部");
         clear.addEventListener("click", () => {
             for (const name of ALL_SLOTS) setValue(this.node, name, null);
@@ -802,12 +839,33 @@ class MediaPanel {
         requestAnimationFrame(() => requestAnimationFrame(() => {
             this.fitPending = false;
             const node = this.node;
+            if (app.canvas?.resizing_node === node) {
+                // The canvas re-applies its drag rectangle on every mouse move; fitting now would
+                // fight it and make the bottom of the node jump. It already keeps the node at least
+                // computeSize() tall, so just fit once the mouse is released.
+                this.fitAfterResize();
+                return;
+            }
             const want = node.computeSize?.();
             if (want && node.size && Math.abs(node.size[1] - want[1]) > 2) {
                 node.setSize([node.size[0], want[1]]);
             }
             node.setDirtyCanvas?.(true, true);
         }));
+    }
+
+    fitAfterResize() {
+        if (this.resizeWait) return;
+        this.resizeWait = true;
+        const wait = () => {
+            if (app.canvas?.resizing_node === this.node) {
+                requestAnimationFrame(wait);
+                return;
+            }
+            this.resizeWait = false;
+            this.fit();
+        };
+        requestAnimationFrame(wait);
     }
 
     watchSize() {

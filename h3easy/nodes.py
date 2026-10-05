@@ -163,10 +163,13 @@ class H3EasyGenerate(io.ComfyNode):
         )
 
     @classmethod
-    def check_lazy_status(cls, mode, image_model=None, reference_model=None, **kwargs):
-        if mode == MODE_REFERENCE:
-            return ["reference_model"] if reference_model is None else []
-        return ["image_model"] if image_model is None else []
+    def check_lazy_status(cls, mode, **kwargs):
+        # Only ask for the model this mode uses, and only when something is linked to it: an
+        # unlinked input (or one whose loader is muted / bypassed) is absent from kwargs, and
+        # asking for it makes ComfyUI fail with "needs input ... but there is no input".
+        # execute() then explains what is missing instead.
+        name = "reference_model" if mode == MODE_REFERENCE else "image_model"
+        return [name] if name in kwargs and kwargs[name] is None else []
 
     @classmethod
     def execute(cls, mode, prompt, clip, video_vae, audio_vae, segments, segment_seconds, width, height,
@@ -176,8 +179,14 @@ class H3EasyGenerate(io.ComfyNode):
                 learned_upscaler=None) -> io.NodeOutput:
         model = reference_model if mode == MODE_REFERENCE else image_model
         if model is None:
-            which = "参考模型(ref2va)" if mode == MODE_REFERENCE else "图文模型(fl2va)"
-            raise ValueError(f"当前是{mode}，请把 {which} 接到「H3 一键生成」上")
+            if mode == MODE_REFERENCE:
+                which, file = "参考模型(ref2va)", "minimax_h3_ref2va_*.safetensors"
+            else:
+                which, file = "图文模型(fl2va)", "minimax_h3_fl2va_*.safetensors"
+            raise ValueError(
+                f"现在是{mode}，但「H3 一键生成」的「{which}」输入没有收到模型。\n"
+                f"请把加载 {file} 的模型加载节点连到这个输入；如果已经连了，检查那个加载节点是不是被"
+                f"禁用（Ctrl+M）或绕过（Ctrl+B，节点变紫色）了。")
         if learned_upscaler is not None and not callable(getattr(learned_upscaler, "upscale_clean_video", None)):
             raise ValueError("学习式upscaler 输入不是 MiniMax H3 Latent Upscaler Provider")
         settings = Settings(
