@@ -389,11 +389,82 @@ class MediaPanel {
         return section;
     }
 
+    // where the generator's width/height come from: its own widgets, a Resolution Selector, or another node
+    outputSize(generator) {
+        if (!generator) return null;
+        const widthInput = generator.inputs?.find((i) => i.name === "width");
+        const heightInput = generator.inputs?.find((i) => i.name === "height");
+        const linked = widthInput?.link != null || heightInput?.link != null;
+        if (!linked) {
+            return { kind: "widgets", w: Number(findWidget(generator, "width")?.value), h: Number(findWidget(generator, "height")?.value) };
+        }
+        const graph = generator.graph;
+        const linkId = widthInput?.link ?? heightInput?.link;
+        const link = graph?.getLink?.(linkId) ?? graph?.links?.get?.(linkId) ?? graph?.links?.[linkId];
+        const source = link && graph.getNodeById(link.origin_id);
+        const aspect = source && findWidget(source, "aspect_ratio");
+        const megapixels = source && findWidget(source, "megapixels");
+        if (aspect && megapixels) {
+            // same arithmetic as ComfyUI's Resolution Selector
+            const match = String(aspect.value).match(/^(\d+):(\d+)/);
+            const multiple = Number(findWidget(source, "multiple")?.value) || 8;
+            if (match) {
+                const [rw, rh] = [Number(match[1]), Number(match[2])];
+                const scale = Math.sqrt((Number(megapixels.value) * 1024 * 1024) / (rw * rh));
+                return {
+                    kind: "selector", source, aspect,
+                    w: Math.round((rw * scale) / multiple) * multiple,
+                    h: Math.round((rh * scale) / multiple) * multiple,
+                };
+            }
+        }
+        return { kind: "external", source };
+    }
+
+    fixButton(label, size, output, generator) {
+        if (output.kind === "widgets") {
+            const target = sizeForAspect(size, output);
+            const button = el("button", "h3e-fit", `按${label}比例改为 ${target.w}×${target.h}`);
+            button.title = "修改「H3 一键生成」的宽和高（画面总面积基本不变）";
+            button.addEventListener("click", (e) => {
+                e.stopPropagation();
+                for (const [name, v] of [["width", target.w], ["height", target.h]]) {
+                    const widget = findWidget(generator, name);
+                    if (!widget) continue;
+                    widget.value = v;
+                    widget.callback?.(v);
+                }
+                generator.setDirtyCanvas?.(true, true);
+                this.render();
+            });
+            return button;
+        }
+        if (output.kind === "selector") {
+            const ratio = size.w / size.h;
+            const options = (output.aspect.options?.values || []).map((v) => {
+                const m = String(v).match(/^(\d+):(\d+)/);
+                return m ? { value: v, label: `${m[1]}:${m[2]}`, ratio: Number(m[1]) / Number(m[2]) } : null;
+            }).filter(Boolean);
+            if (!options.length) return null;
+            const best = options.reduce((a, b) => (Math.abs(Math.log(b.ratio / ratio)) < Math.abs(Math.log(a.ratio / ratio)) ? b : a));
+            if (best.value === output.aspect.value) return null;
+            const button = el("button", "h3e-fit", `把分辨率选择器改成 ${best.label}`);
+            button.title = `宽高由「${output.source.title || output.source.type}」提供，改它的宽高比`;
+            button.addEventListener("click", (e) => {
+                e.stopPropagation();
+                output.aspect.value = best.value;
+                output.aspect.callback?.(best.value);
+                output.source.setDirtyCanvas?.(true, true);
+                this.render();
+            });
+            return button;
+        }
+        return null;
+    }
+
     frameAspects() {
         const generator = linkedGenerators(this.node)[0];
-        const output = generator
-            ? { w: Number(findWidget(generator, "width")?.value), h: Number(findWidget(generator, "height")?.value) }
-            : null;
+        const output = this.outputSize(generator);
         const box = el("div", "h3e-aspects");
         let offered = false;
         for (const [slot, label] of FRAMES) {
@@ -402,29 +473,23 @@ class MediaPanel {
             if (!size) continue;
             const orientation = size.w > size.h ? "横图" : size.w < size.h ? "竖图" : "方图";
             const line = el("div", "h3e-aspect");
-            if (!output || !output.w || !output.h) {
+            if (!output) {
                 line.textContent = `${label} ${size.w}×${size.h}（${orientation}）`;
+            } else if (output.kind === "external") {
+                line.classList.add("h3e-bad");
+                line.textContent = `${label} ${size.w}×${size.h}（${orientation}）。宽高由连接的「${output.source?.title || "其他节点"}」决定，`
+                    + `请确认它的比例和${label}一致，否则${slot === "first_frame" ? "会被拉伸变形" : "会被居中裁切"}`;
             } else if (Math.abs(Math.log((size.w / size.h) / (output.w / output.h))) > 0.05) {
                 line.classList.add("h3e-bad");
-                line.append(el("span", "", `⚠ ${label} ${size.w}×${size.h}（${orientation}）和输出 ${output.w}×${output.h} 比例不同，`
+                const from = output.kind === "selector" ? "（分辨率选择器）" : "";
+                line.append(el("span", "", `⚠ ${label} ${size.w}×${size.h}（${orientation}）和输出 ${output.w}×${output.h}${from} 比例不同，`
                     + (slot === "first_frame" ? "会被拉伸变形" : "会被居中裁切")));
                 if (!offered) {
-                    offered = true;
-                    const target = sizeForAspect(size, output);
-                    const fit = el("button", "h3e-fit", `按${label}比例改为 ${target.w}×${target.h}`);
-                    fit.title = "修改「H3 一键生成」的宽和高（画面总面积基本不变）";
-                    fit.addEventListener("click", (e) => {
-                        e.stopPropagation();
-                        for (const [name, v] of [["width", target.w], ["height", target.h]]) {
-                            const widget = findWidget(generator, name);
-                            if (!widget) continue;
-                            widget.value = v;
-                            widget.callback?.(v);
-                        }
-                        generator.setDirtyCanvas?.(true, true);
-                        this.render();
-                    });
-                    line.append(fit);
+                    const button = this.fixButton(label, size, output, generator);
+                    if (button) {
+                        offered = true;
+                        line.append(button);
+                    }
                 }
             } else {
                 line.classList.add("h3e-good");
@@ -677,6 +742,20 @@ app.registerExtension({
                 });
                 return result;
             };
+            return;
+        }
+        if (type === "ResolutionSelector" && !node.__h3eWatch) {
+            node.__h3eWatch = true;
+            for (const widget of node.widgets || []) {
+                const callback = widget.callback;
+                widget.callback = function (...args) {
+                    const result = callback?.apply(this, args);
+                    queueMicrotask(() => {
+                        for (const other of node.graph?._nodes || []) if (other.__h3ePanel) other.__h3ePanel.render();
+                    });
+                    return result;
+                };
+            }
             return;
         }
         if (type !== LOADER || node.__h3ePanel) return;

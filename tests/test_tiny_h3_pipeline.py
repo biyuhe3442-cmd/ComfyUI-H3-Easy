@@ -245,7 +245,9 @@ def test_generate_node_end_to_end(env):
     assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE) == ["image_model"]
     assert H3EasyGenerate.check_lazy_status(mode=MODE_REFERENCE) == ["reference_model"]
     assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, image_model=object()) == []
-    assert H3EasyGenerate.validate_inputs(width=500, height=320) != True  # noqa: E712
+    # width/height may be linked (None during Core validation) or unaligned: no validation hook,
+    # the pipeline snaps them to the 32-pixel grid instead
+    assert "validate_inputs" not in H3EasyGenerate.__dict__
 
     out = H3EasyGenerate.execute(
         mode=MODE_IMAGE, prompt="hello", clip=FakeClip(), video_vae=FakeVideoVAE(), audio_vae=FakeAudioVAE(),
@@ -362,3 +364,12 @@ def test_image_mode_ignores_reference_media(env):
     assert "锁定音频" not in result.report
     assert "输出音频：H3 生成" in result.report
     assert "图文模式不使用参考图/参考视频" in result.report
+
+
+def test_unaligned_size_is_snapped(env):
+    pipeline = env["pipeline"]
+    assert pipeline.snap_size(500) == 512 and pipeline.snap_size(336) == 320 and pipeline.snap_size(100) == 256
+    result = pipeline.run(_settings(pipeline, width=500, height=330, progressive=False), env["model"], FakeClip(),
+                          FakeVideoVAE(), FakeAudioVAE(), None)
+    assert result.images.shape[1:3] == (320, 512)
+    assert "500×330 → 512×320" in result.report

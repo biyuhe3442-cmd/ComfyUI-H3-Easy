@@ -169,12 +169,6 @@ class H3EasyGenerate(io.ComfyNode):
         return ["image_model"] if image_model is None else []
 
     @classmethod
-    def validate_inputs(cls, width, height, **kwargs):
-        if width % 32 or height % 32:
-            return "宽和高必须是 32 的倍数"
-        return True
-
-    @classmethod
     def execute(cls, mode, prompt, clip, video_vae, audio_vae, segments, segment_seconds, width, height,
                 steps, seed, lock_audio, progressive, tst, low_vram, sampler_name="res_multistep",
                 scheduler="simple", progressive_scale=0.7, progressive_switch=0.35, upscale_method=UPSCALE_PIXEL,

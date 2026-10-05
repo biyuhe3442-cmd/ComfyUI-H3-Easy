@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import time
 from dataclasses import dataclass, field
@@ -164,9 +165,18 @@ def _progressive_first_segment(model, builder, positive, segment, settings, samp
     return _sample(model, positive, start, sigmas[k:], sampler, settings.seed, noise=zeros)
 
 
+def snap_size(value) -> int:
+    """H3 works on a 32-pixel grid; widths/heights may arrive unaligned from links or typed values."""
+    return max(256, min(4096, int(round(float(value) / 32)) * 32))
+
+
 def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | None,
         learned_upscaler=None) -> Result:
     report = Reporter()
+    width, height = snap_size(settings.width), snap_size(settings.height)
+    if (width, height) != (settings.width, settings.height):
+        report.add(f"宽高已对齐到 32 的倍数：{settings.width}×{settings.height} → {width}×{height}")
+        settings = dataclasses.replace(settings, width=width, height=height)
     media = media or Media()
     image_mode = settings.mode == MODE_IMAGE
     segments = timing.plan_segments(settings.segments, settings.segment_seconds)
