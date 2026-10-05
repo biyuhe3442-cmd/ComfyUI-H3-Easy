@@ -867,6 +867,17 @@ class MediaPanel {
     }
 }
 
+// With the learned upscaler wired in, the upscale-method choice no longer applies to the
+// low-res -> full-res handoff; say so on the widget itself.
+function markUpscaleMethod(generator) {
+    const widget = findWidget(generator, "upscale_method");
+    if (!widget) return;
+    widget.__h3eLabel ??= (widget.label || "放大方式").replace(/（已改用学习式upscaler）$/, "");
+    const linked = generator.inputs?.find((i) => i.name === "learned_upscaler")?.link != null;
+    widget.label = linked ? `${widget.__h3eLabel}（已改用学习式upscaler）` : widget.__h3eLabel;
+    generator.setDirtyCanvas?.(true, true);
+}
+
 function refreshLoaders(generator) {
     for (const loader of loadersFeeding(generator)) loader.__h3ePanel.render();
 }
@@ -892,11 +903,19 @@ app.registerExtension({
             node.onConnectionsChange = function (...args) {
                 const result = connections?.apply(this, args);
                 queueMicrotask(() => {
+                    markUpscaleMethod(node);
                     refreshLoaders(node);
                     for (const loader of node.graph?._nodes || []) if (loader.__h3ePanel) loader.__h3ePanel.render();
                 });
                 return result;
             };
+            const configure = node.onConfigure;
+            node.onConfigure = function (...args) {
+                const result = configure?.apply(this, args);
+                setTimeout(() => markUpscaleMethod(node), 0);  // links are restored after the node
+                return result;
+            };
+            markUpscaleMethod(node);
             return;
         }
         if (type === "ResolutionSelector" && !node.__h3eWatch) {

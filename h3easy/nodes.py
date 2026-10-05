@@ -156,7 +156,10 @@ class H3EasyGenerate(io.ComfyNode):
                                tooltip="什么时候切到全分辨率。数值越小，低分辨率跑的步数越多、越快。"
                                        "默认 0.35：20 步时前 13 步低分辨率。"),
                 io.Combo.Input("upscale_method", options=UPSCALE_METHODS, default=UPSCALE_PIXEL,
-                               display_name="放大方式", advanced=True),
+                               display_name="放大方式", advanced=True,
+                               tooltip="渐进加速从小分辨率切到全分辨率时怎么放大。像素放大：小分辨率解码 → 放大 → 重新编码；"
+                                       "latent 插值：最快但可能有伪影。接了「学习式upscaler」输入时，放大一律改用学习式模型，"
+                                       "这里只影响「续写段渐进」缩小那 39 帧的方式。"),
                 io.Float.Input("tst_strength", default=0.2, min=0.0, max=1.0, step=0.05,
                                display_name="TST强度", advanced=True),
                 io.Combo.Input("ref_image_size", options=["match", "max"], default="match",
