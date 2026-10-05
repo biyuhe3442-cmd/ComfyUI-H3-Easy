@@ -233,9 +233,11 @@ def test_reference_mode(env):
                   videos=[torch.rand(30, 128, 160, 3)], video_audios=[_audio(1.25)], audios=[_audio(2.0)])
     clip = FakeClip()
     result = pipeline.run(_settings(pipeline, mode=pipeline.MODE_REFERENCE, segments=2, progressive=True,
-                                    prompt="<Picture 1> waves at <Picture 2>"),
+                                    progressive_continuation=True, prompt="<Picture 1> waves at <Picture 2>"),
                           env["model"], clip, FakeVideoVAE(), FakeAudioVAE(), media)
     assert result.images.shape[0] == 90 + 141 - 39
+    assert torch.isfinite(result.images).all()
+    assert "第 2 段渐进加速（实验）" in result.report
     # same prompt + different segment lengths -> one encode per distinct length
     assert clip.calls == 2
     assert "参考模式：音频只作为参考" in result.report
@@ -416,3 +418,58 @@ def test_missing_model_error_is_explained():
         H3EasyGenerate.execute(mode=MODE_IMAGE, prompt="", clip=None, video_vae=None, audio_vae=None,
                                segments=1, segment_seconds=6.0, width=1024, height=576, steps=20, seed=0,
                                lock_audio=True, progressive=True, tst=False, low_vram=True)
+
+
+def test_progressive_continuation_keeps_context(env, monkeypatch):
+    """Experimental progressive continuation: low-res start, exact full-res context afterwards."""
+    pipeline = env["pipeline"]
+    from h3easy import continuation
+    from h3easy.media import Media
+    seen = {"prefix_calls": []}
+    original_apply, original_restore = continuation.apply_prefix, continuation.restore_prefix
+
+    def apply_spy(samples, video_ctx, audio_ctx):
+        video, audio = continuation.split_av(samples)
+        seen["prefix_calls"].append((tuple(video.shape), audio.clone(), audio_ctx))
+        return original_apply(samples, video_ctx, audio_ctx)
+
+    def restore_spy(samples, video_ctx, audio_ctx):
+        video, audio = continuation.split_av(samples)
+        seen["video_err"] = (video[:, :, :12] - video_ctx.to(video)).abs().max().item()
+        seen["audio_err"] = (audio[..., :65] - audio_ctx.to(audio)).abs().max().item()
+        return original_restore(samples, video_ctx, audio_ctx)
+
+    monkeypatch.setattr(continuation, "apply_prefix", apply_spy)
+    monkeypatch.setattr(continuation, "restore_prefix", restore_spy)
+    result = pipeline.run(_settings(pipeline, segments=2, progressive=False, progressive_continuation=True),
+                          env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(), Media())
+    assert result.images.shape[0] == 90 + 141 - 39
+    assert torch.isfinite(result.images).all()
+    assert "第 2 段渐进加速（实验）：前" in result.report
+    assert "第 1 段渐进加速" not in result.report  # the first-segment switch is independent
+    # low-res stage (512x320 * 0.7 -> 352x256, 22x16 latent), then the full-res stage (32x20 latent)
+    assert "前 4 步 352×256，后 2 步 512×320" in result.report
+    assert "第 2 段放大：像素放大" in result.report
+    shapes = [s for s, _, _ in seen["prefix_calls"]]
+    assert shapes[0][-2:] == (16, 22) and shapes[1][-2:] == (20, 32)
+    # the clean audio estimate handed to the full-res stage is in latent units: its context
+    # part equals the source context (the sampler's audio scale was undone)
+    _, x0_audio, audio_ctx = seen["prefix_calls"][1]
+    assert (x0_audio[..., :65] - audio_ctx).abs().max().item() < 1e-3
+    # the full-resolution stage itself kept the context (before the exact restore)
+    assert seen["video_err"] < 1e-4, seen
+    assert seen["audio_err"] < 1e-4, seen
+
+
+def test_progressive_continuation_lock_audio_latent_method(env):
+    pipeline = env["pipeline"]
+    from h3easy.media import Media
+    settings = _settings(pipeline, segments=3, progressive=True, progressive_continuation=True,
+                         upscale_method=pipeline.UPSCALE_LATENT)
+    result = pipeline.run(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(),
+                          Media(audios=[_audio(10.0)]))
+    assert result.images.shape[0] == 90 + 2 * (141 - 39)
+    assert torch.isfinite(result.images).all()
+    for i in (2, 3):
+        assert f"第 {i} 段渐进加速（实验）" in result.report
+    assert "输出音频：原音频" in result.report

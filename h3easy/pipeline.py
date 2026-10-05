@@ -48,6 +48,7 @@ class Settings:
     progressive_scale: float = 0.7
     progressive_switch: float = 0.35
     upscale_method: str = UPSCALE_PIXEL
+    progressive_continuation: bool = False
     tst: bool = False
     tst_strength: float = 0.2
     low_vram: bool = True
@@ -117,17 +118,17 @@ def _scaled_size(width: int, height: int, scale: float) -> tuple[int, int]:
     return min(w, width), min(h, height)
 
 
-def _upscale_video(x0_video, method, video_vae, width, height, learned_upscaler, report):
+def _upscale_video(x0_video, method, video_vae, width, height, learned_upscaler, report, label="第 1 段"):
     lat_h, lat_w = height // 16, width // 16
     target_t = x0_video.shape[2]
     if learned_upscaler is not None:
-        report.add("第 1 段放大：学习式 upscaler")
+        report.add(f"{label}放大：学习式 upscaler")
         up = learned_upscaler.upscale_clean_video(x0_video, target_h=lat_h, target_w=lat_w)
         return up.to("cpu", torch.float32)
     if method == UPSCALE_LATENT:
-        report.add("第 1 段放大：latent 三线性插值")
+        report.add(f"{label}放大：latent 三线性插值")
         return F.interpolate(x0_video.float(), size=(target_t, lat_h, lat_w), mode="trilinear", align_corners=False)
-    report.add("第 1 段放大：像素放大（低分辨率解码 → 放大 → 重新编码）")
+    report.add(f"{label}放大：像素放大（低分辨率解码 → 放大 → 重新编码）")
     frames = video_vae.decode(x0_video)
     if frames.ndim == 5:
         frames = frames.reshape(-1, frames.shape[-3], frames.shape[-2], frames.shape[-1])
@@ -181,6 +182,66 @@ def _progressive_first_segment(model, builder, positive, segment, settings, samp
 def snap_size(value) -> int:
     """H3 works on a 32-pixel grid; widths/heights may arrive unaligned from links or typed values."""
     return max(256, min(4096, int(round(float(value) / 32)) * 32))
+
+
+def _downscale_context(video_ctx, method, video_vae, width, height):
+    """The 39-frame continuation context at the low-resolution stage's size."""
+    lat_h, lat_w = height // 16, width // 16
+    if method == UPSCALE_LATENT:
+        return F.interpolate(video_ctx.float(), size=(video_ctx.shape[2], lat_h, lat_w), mode="area")
+    frames = video_vae.decode(video_ctx)
+    if frames.ndim == 5:
+        frames = frames.reshape(-1, frames.shape[-3], frames.shape[-2], frames.shape[-1])
+    frames = comfy.utils.common_upscale(frames.movedim(-1, 1), width, height, "area", "disabled")
+    low = video_vae.encode(frames.movedim(1, -1).clamp(0.0, 1.0))
+    if low.shape[2] != video_ctx.shape[2]:
+        raise RuntimeError(f"context downscale produced {low.shape[2]} latent slots, expected {video_ctx.shape[2]}")
+    return low.to("cpu", torch.float32)
+
+
+def _progressive_continuation(model, builder, positive, target, video_ctx, audio_ctx, segment, settings,
+                              sampler, sigmas, seed, learned_upscaler, report):
+    """Experimental: progressive sampling for a continuation segment.
+
+    The high-noise steps run at low resolution with a downscaled copy of the 39-frame
+    context kept fixed. At the switch the clean estimate is upscaled, the exact
+    full-resolution context is put back, and the rest is sampled at full resolution from
+    a fresh noise draw at the switch sigma, again with the context kept fixed.
+    """
+    low_w, low_h = _scaled_size(settings.width, settings.height, settings.progressive_scale)
+    if (low_w, low_h) == (settings.width, settings.height):
+        return None
+    model_sampling = model.get_model_object("model_sampling")
+    shift = float(getattr(model_sampling, "shift", 12.0))
+    k = timing.handoff_index(sigmas.tolist(), shift, settings.progressive_switch)
+    report.add(f"第 {segment.index + 1} 段渐进加速（实验）：前 {k} 步 {low_w}×{low_h}，后 {len(sigmas) - 1 - k} 步 "
+               f"{settings.width}×{settings.height}")
+
+    low_positive = builder.rescale_keyframes(positive, low_w, low_h)
+    low_ctx = _downscale_context(video_ctx, settings.upscale_method, builder.video_vae, low_w, low_h)
+    low_latent, low_mask = continuation.apply_prefix(empty_av_latent(low_w, low_h, segment.frames), low_ctx, audio_ctx)
+    x0_store: dict = {}
+    _sample(model, low_positive, low_latent, sigmas[:k + 1], sampler, seed, mask=low_mask, x0_store=x0_store)
+    x0 = x0_store.get("x0")
+    if x0 is None or not getattr(x0, "is_nested", False):
+        raise RuntimeError("progressive sampling did not report a clean estimate")
+    x0_video, x0_audio = (t.to("cpu", torch.float32) for t in x0.unbind()[:2])
+    # the sampler carries audio scaled onto the video schedule; back to latent units
+    x0_audio = x0_audio / float(getattr(model_sampling, "audio_scale", 1.0))
+    del x0, x0_store, low_latent, low_mask
+    if settings.low_vram:
+        mm.soft_empty_cache()
+
+    up = _upscale_video(x0_video, settings.upscale_method, builder.video_vae, settings.width, settings.height,
+                        learned_upscaler, report, label=f"第 {segment.index + 1} 段")
+    del x0_video
+    clean, mask = continuation.apply_prefix(continuation.join_av(up, x0_audio), video_ctx, audio_ctx)
+    generator = torch.Generator().manual_seed((seed + 0x5EED) & 0xFFFFFFFFFFFFFFFF)
+    noise = continuation.join_av(torch.randn(up.shape, generator=generator, dtype=torch.float32),
+                                 torch.randn(x0_audio.shape, generator=generator, dtype=torch.float32))
+    # starting at sigma_k the sampler forms sigma_k * noise + (1 - sigma_k) * clean, and the
+    # mask keeps re-noising the exact context with the same noise at every later step
+    return _sample(model, positive, clean, sigmas[k:], sampler, seed, noise=noise, mask=mask)
 
 
 def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | None,
@@ -277,8 +338,13 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         else:
             video_ctx, audio_ctx = continuation.tail_context(previous)
             audio_ctx = audio_ctx if carry_audio else None
-            latent, mask = continuation.apply_prefix(target, video_ctx, audio_ctx)
-            out = _sample(model, positive, latent, sigmas, sampler, seed, mask=mask)
+            out = None
+            if settings.progressive_continuation:
+                out = _progressive_continuation(model, builder, positive, target, video_ctx, audio_ctx, seg,
+                                                settings, sampler, sigmas, seed, learned_upscaler, report)
+            if out is None:
+                latent, mask = continuation.apply_prefix(target, video_ctx, audio_ctx)
+                out = _sample(model, positive, latent, sigmas, sampler, seed, mask=mask)
             out = continuation.restore_prefix(out, video_ctx, audio_ctx)
         video, audio = continuation.split_av(out)
         video_latents.append(video.to("cpu", torch.float32))

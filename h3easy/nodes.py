@@ -160,6 +160,11 @@ class H3EasyGenerate(io.ComfyNode):
                 io.Combo.Input("ref_image_size", options=["match", "max"], default="match",
                                display_name="参考图尺寸", advanced=True,
                                tooltip="match：按输出画面大小缩放（快）；max：最高保真（慢很多）。"),
+                # appended last so workflows saved before it keep their widget values in place
+                io.Boolean.Input("progressive_continuation", default=False, display_name="续写段渐进（实验）",
+                                 tooltip="实验功能：第 2 段起也先用小分辨率跑前面的高噪步，再放大跑完，段数多时明显更快。"
+                                         "切到全分辨率时会把接上一段的那 39 帧原样换回去，但接缝处可能有轻微不连贯，"
+                                         "效果不满意就关掉。分辨率和步数分配跟「渐进加速」相同。"),
             ],
             outputs=[
                 io.Video.Output(display_name="视频"),
@@ -182,7 +187,8 @@ class H3EasyGenerate(io.ComfyNode):
     def execute(cls, mode, prompt, clip, video_vae, audio_vae, segments, segment_seconds, width, height,
                 steps, seed, lock_audio, progressive, tst, low_vram, sampler_name="res_multistep",
                 scheduler="simple", progressive_scale=0.7, progressive_switch=0.35, upscale_method=UPSCALE_PIXEL,
-                tst_strength=0.2, ref_image_size="match", image_model=None, reference_model=None, media=None,
+                tst_strength=0.2, ref_image_size="match", progressive_continuation=False,
+                image_model=None, reference_model=None, media=None,
                 learned_upscaler=None) -> io.NodeOutput:
         model = reference_model if mode == MODE_REFERENCE else image_model
         if model is None:
@@ -200,7 +206,8 @@ class H3EasyGenerate(io.ComfyNode):
             mode=mode, prompt=prompt, segments=segments, segment_seconds=segment_seconds,
             width=width, height=height, steps=steps, sampler_name=sampler_name, scheduler=scheduler,
             seed=seed, lock_audio=lock_audio, progressive=progressive, progressive_scale=progressive_scale,
-            progressive_switch=progressive_switch, upscale_method=upscale_method, tst=tst,
+            progressive_switch=progressive_switch, upscale_method=upscale_method,
+            progressive_continuation=progressive_continuation, tst=tst,
             tst_strength=tst_strength, low_vram=low_vram, ref_image_size=ref_image_size,
         )
         result = run(settings, model, clip, video_vae, audio_vae, media, learned_upscaler)
