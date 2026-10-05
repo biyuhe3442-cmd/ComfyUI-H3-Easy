@@ -108,7 +108,9 @@ class H3EasyGenerate(io.ComfyNode):
                 io.Combo.Input("mode", options=[MODE_IMAGE, MODE_REFERENCE], default=MODE_IMAGE, display_name="模式"),
                 io.String.Input("prompt", multiline=True, default="", display_name="提示词",
                                 tooltip="多段时可用时间轴写法：[0-6s] 换行写第 1 段，[6-10s] 换行写第 2 段……；"
-                                        "或用单独一行 --- 分隔每段；不分段则所有段共用。参考模式用 <Picture 1> 指代参考图1。"),
+                                        "标题上面的文字放在每段开头，单独一行 [共用] 下面的文字放在每段结尾；"
+                                        "或用单独一行 --- 分隔每段；不分段则所有段共用。参考模式用 <Picture 1> 指代参考图1。"
+                                        "推荐用官方 h3-prompt-writing 的结构写，见 README。"),
                 io.Clip.Input("clip", display_name="文本编码器"),
                 io.Vae.Input("video_vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),

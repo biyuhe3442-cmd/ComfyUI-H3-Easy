@@ -3,7 +3,10 @@
 Supported layouts (checked in this order):
 
 * Timeline: header lines like ``[0-6s]`` / ``[6-10]`` / ``[6~10秒]``. Text above the
-  first header is shared by every segment. With one section per segment the
+  first header is put in front of every segment's prompt; text under a ``[共用]`` /
+  ``[shared]`` line is put at the end of every segment's prompt (for the closing
+  ``overall_soundscape`` / ``non_diegetic_music`` sections of H3's official prompt
+  format). Parts are joined with a blank line. With one section per segment the
   sections are used in order; otherwise each segment takes the section that
   overlaps the new content it adds the most.
 * List: sections separated by a line of three or more dashes (``---``). Segment N
@@ -19,6 +22,7 @@ _TIMELINE = re.compile(
     r"^\s*\[\s*(\d+(?:\.\d+)?)\s*(?:s|秒)?\s*[-~～–—到至]\s*(\d+(?:\.\d+)?)\s*(?:s|秒)?\s*\]\s*$",
     re.IGNORECASE,
 )
+_SHARED_TAIL = re.compile(r"^\s*\[\s*(共用|shared)\s*\]\s*$", re.IGNORECASE)
 _LIST_SEPARATOR = re.compile(r"^\s*-{3,}\s*$")
 
 
@@ -28,17 +32,20 @@ def _join(lines: list[str]) -> str:
 
 def _timeline_sections(lines: list[str]):
     shared: list[str] = []
+    tail: list[str] = []
     sections: list[tuple[float, float, list[str]]] = []
+    target = shared
     for line in lines:
         match = _TIMELINE.match(line)
         if match:
             start, end = float(match.group(1)), float(match.group(2))
             sections.append((min(start, end), max(start, end), []))
-        elif sections:
-            sections[-1][2].append(line)
+            target = sections[-1][2]
+        elif _SHARED_TAIL.match(line):
+            target = tail
         else:
-            shared.append(line)
-    return _join(shared), [(a, b, _join(body)) for a, b, body in sections]
+            target.append(line)
+    return _join(shared), [(a, b, _join(body)) for a, b, body in sections], _join(tail)
 
 
 def _pick_section(sections, window):
@@ -60,16 +67,19 @@ def split_prompts(text: str, windows: list[tuple[float, float]]) -> tuple[list[s
     lines = text.splitlines()
 
     if any(_TIMELINE.match(line) for line in lines):
-        shared, sections = _timeline_sections(lines)
+        shared, sections, tail = _timeline_sections(lines)
         if len(sections) == count:
             # one section per segment: keep the written order even when the snapped
             # segment lengths do not match the times in the headers
             bodies = [body for _, _, body in sections]
         else:
             bodies = [_pick_section(sections, window) for window in windows]
-        prompts = [_join([shared, body]) if shared else body for body in bodies]
+        prompts = ["\n\n".join(part for part in (shared, body, tail) if part) for body in bodies]
         return prompts, "timeline"
 
+    # without timeline sections a [共用] marker has nothing to attach to: just drop the line
+    lines = [line for line in lines if not _SHARED_TAIL.match(line)]
+    text = "\n".join(lines).strip()
     if any(_LIST_SEPARATOR.match(line) for line in lines):
         items, current = [], []
         for line in lines:

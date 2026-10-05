@@ -60,7 +60,7 @@ def test_prompts_timeline_with_shared_text():
     windows = [s.new_window_seconds for s in timing.plan_segments(3, 4.0)]
     prompts, layout = split_prompts(text, windows)
     assert layout == "timeline"
-    assert prompts[0] == "电影感，真实光影\n她走进房间"
+    assert prompts[0] == "电影感，真实光影\n\n她走进房间"
     assert prompts[1].endswith("她坐下")
     assert prompts[2].endswith("她看向窗外")
 
@@ -86,3 +86,21 @@ def test_prompts_list_and_fixed():
     prompts, layout = split_prompts("  same  ", [(0, 1)] * 2)
     assert layout == "fixed"
     assert prompts == ["same", "same"]
+
+
+def test_prompts_timeline_shared_tail_official_layout():
+    text = (
+        "subject_definitions:\n<Subject 1> is the man in <Picture 1>.\n\n"
+        "[0-8s]\nsummary:\n[reference generation] first\n\ndetailed_description:\n[Shot 1] A\n\n"
+        "[8-16.5s]\nsummary:\n[reference generation] second\n\ndetailed_description:\n[Shot 1] B\n\n"
+        "[共用]\noverall_soundscape:\nWind.\n\nnon_diegetic_music:\nN/A"
+    )
+    prompts, layout = split_prompts(text, [(0, 8), (8, 16.5)])
+    assert layout == "timeline"
+    assert prompts[0] == ("subject_definitions:\n<Subject 1> is the man in <Picture 1>.\n\n"
+                          "summary:\n[reference generation] first\n\ndetailed_description:\n[Shot 1] A\n\n"
+                          "overall_soundscape:\nWind.\n\nnon_diegetic_music:\nN/A")
+    assert "second" in prompts[1] and prompts[1].endswith("non_diegetic_music:\nN/A")
+    assert "[共用]" not in prompts[1] and "[Shot 1] A" not in prompts[1]
+    # [Shot N] and [reference generation] are content, not timeline headers
+    assert split_prompts("[Shot 1] x\n[shared]\ntail", [(0, 5)]) == (["[Shot 1] x\ntail"], "fixed")

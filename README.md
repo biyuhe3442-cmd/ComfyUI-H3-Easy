@@ -145,7 +145,10 @@ H3 的去噪大部分步数都花在高噪阶段，所以 20 步里有 13 步落
 
 ### 提示词写法
 
-**时间轴（推荐多段时用）**：每段一节，标题单独占一行。标题上面的文字所有段共用。
+**时间轴（推荐多段时用）**：每段一节，标题单独占一行。
+- 标题上面的文字会放在**每一段的开头**。
+- 单独一行 `[共用]`（或 `[shared]`）下面的文字会放在**每一段的结尾**。
+- 各部分之间自动空一行。
 
 ```text
 Realistic cinematic look, natural light.
@@ -162,6 +165,30 @@ She stops under a shop awning and smiles at the camera...
 **分隔列表**：用单独一行 `---` 分开每段。段数比小节多时，多出来的段沿用最后一节。
 
 **不分段**：所有段共用同一段提示词。
+
+#### 官方提示词结构（推荐）
+
+MiniMax 官方发布了 H3 写提示词的 skill：[h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)。官方说明里明确写了，按这个结构整理过的提示词对最终质量影响很大。参考模式对措辞尤其敏感。
+
+要点：
+- 正文用**英文**写；台词保留原语言，写成 `<d>[Chinese] 你还是来了。</d>`。`<d>` 是 H3 分词器里的专用标记，ComfyUI 已经支持。
+- 说话的人编号 `(S1)`、`(S2)`，写在人物后面：`<Subject 1> (S1) says, <d>[Chinese] ...</d>`。
+- 镜头写成 `[Shot 1] ...`；之后的镜头写 `[Shot 2] At 00:04.500, the shot cuts to ...`，时间从**这一段视频的开头**算起。
+- **图文模式**用三段：`integrated_multimodal_description:`、`overall_soundscape:`、`non_diegetic_music:`。有首帧时，第一行是 `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.`
+- **参考模式**用六段：`subject_definitions:`、`summary:`、`retention_analysis:`、`detailed_description:`、`overall_soundscape:`、`non_diegetic_music:`。角色在 `subject_definitions` 里定义成 `<Subject 1> is the young swordsman in <Picture 1>, ...`，后面一直用 `<Subject 1>` 指代。
+
+**多段续写时这样放：**
+- 每段都一样的放在最上面，比如 `subject_definitions`。
+- 每段不同的放在各自的时间标题下面，比如 `summary`、`retention_analysis`、`detailed_description`。
+- 每段都要的结尾放在 `[共用]` 下面，比如 `overall_soundscape`、`non_diegetic_music`。
+
+插件会给每一段拼出一份完整的六段（或三段）提示词。
+
+注意每段是单独生成的一个片段：
+- 第 1 段从 0 秒开始。
+- 第 2 段起，片段开头约 1.6 秒是接上一段的画面，所以 `[Shot 1]` 要从上一段结尾的状态写起，例如 `The shot opens on the same medium two-shot ...`。
+
+完整例子：[`example_prompts/wuxia_two_characters_ref2va_7seg.txt`](example_prompts/wuxia_two_characters_ref2va_7seg.txt)。参考模式，两个角色（参考图 1 是男，参考图 2 是女），段数 7、每段 8 秒，约 59 秒。
 
 ### 每段实际时长
 

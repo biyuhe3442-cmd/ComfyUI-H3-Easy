@@ -1,0 +1,93 @@
+subject_definitions:
+<Subject 1> is the young swordsman in <Picture 1>, with sharp, handsome features, long black hair tied in a high ponytail with a silver hair ornament and loose strands framing his face, wearing a long black robe with gold embroidered patterns over dark navy-blue inner layers, an ornate gold-trimmed pauldron on one shoulder, black leather bracers with gold filigree, a wide brown leather belt with an ornate metal buckle and hanging chains, a sword in a black scabbard with a dark wrapped hilt and a dangling tassel at his left hip, and black knee-high leather boots with gold trim.
+<Subject 2> is the young swordswoman in <Picture 2>, with fair skin, red lips, and long straight black hair in a high ponytail crowned by a silver hairpiece with small hanging ornaments, dangling silver earrings, wearing a white high-collared robe with fine silver embroidery, sheer flowing white outer layers with long translucent sleeves, a light-blue sash and pale-blue skirt panels, and white boots, holding a sword in an ornate light-blue scabbard in her right hand.
+
+[0-8s]
+summary:
+[reference generation] The target video shows <Subject 1> standing alone in a moonlit bamboo-grove clearing at night, waiting in silence while the wind moves his robe.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] A wide shot opens on a clearing inside a dense bamboo grove under a full moon. Tall green-black bamboo stalks line both sides of the frame, fallen leaves cover the ground, and low mist drifts between the stalks, with faint mountain silhouettes far behind. <Subject 1> stands alone at the center of the clearing in three-quarter view, facing slightly left toward the darkness between the bamboo, his left hand resting on the hilt of the black-scabbarded sword at his left hip. A steady night wind lifts the hem of his long black robe, the gold embroidery catching the moonlight, and sways his high ponytail and the tassel hanging from the sword hilt. The camera pushes in with small amplitude at slow speed, moving from the wide view to a medium-wide shot that frames him from head to knees. His face stays calm and alert; he blinks slowly and turns his head a few degrees toward the left edge of the grove, as if listening. Bamboo leaves rustle overhead and a few loose leaves drift down through the moonlight past his shoulders. By the end of the shot he stands still in medium-wide framing, slightly left of center, looking toward the left side of the grove.
+
+[8-16.5s]
+summary:
+[reference generation] The shot continues with <Subject 1> waiting in the bamboo clearing as <Subject 2> walks out of the bamboo on the left and stops a few steps away from him.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same medium-wide framing as the moment before: <Subject 1> stands slightly left of center in the moonlit bamboo clearing, looking toward the left side of the grove, his hand resting on his sword hilt while the wind moves his black robe and ponytail. Soft, unhurried footsteps on dry leaves come from the left. <Subject 2> walks out from between the bamboo stalks at the left edge of the frame, holding her sword in its light-blue scabbard in her right hand. Her sheer white outer layers and long translucent sleeves float behind her in the wind, and the silver crown in her hair glints in the moonlight. The camera trucks right with small amplitude at slow speed and widens slightly so both of them fit in the frame. She walks steadily across the leaf-covered ground toward him, her expression cool and composed, and stops about three steps away, facing him in profile. <Subject 1> does not move; only his eyes follow her. Mist drifts between them at knee height. By the end of the shot the two stand facing each other in a medium-wide two-shot, <Subject 2> on the left and <Subject 1> on the right, both in profile and silent.
+
+[16.5-25s]
+summary:
+[reference generation] Continuing the face-off in the bamboo clearing, <Subject 1> turns toward <Subject 2> and speaks, and she answers calmly.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword with tassel, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbarded sword are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same medium-wide two-shot: <Subject 2> on the left and <Subject 1> on the right face each other in profile in the moonlit bamboo clearing, mist drifting between them. <Subject 1> turns his body fully toward her and lets his hand fall from the sword hilt. The camera pushes in with small amplitude at slow speed toward a medium two-shot that frames both of them from the waist up. <Subject 1> (S1), in a low, calm young male voice at a slow pace, says, <d>[Chinese] 你还是来了。</d> He closes his mouth and holds her gaze. <Subject 2> (S2) keeps her chin level and answers in a clear, cool young female voice at an even pace, <d>[Chinese] 我答应过的事，从不失约。</d> Her lips close at the end of the line, and a faint breeze lifts the loose strands of her ponytail. Both stay still for a moment, moonlight outlining their faces, as bamboo leaves rustle above them. The shot ends on the medium two-shot, the two facing each other in silence.
+
+[25-33.5s]
+summary:
+[reference generation] In the moonlit bamboo clearing, <Subject 2> and <Subject 1> draw their swords and settle into guard stances facing each other.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same medium two-shot of <Subject 2> on the left and <Subject 1> on the right facing each other in silence under the moonlight. <Subject 2> shifts her weight back, grips the scabbard in her left hand, and draws her blade with her right hand in one smooth motion; a clean metallic ring sounds as the steel slides free, and moonlight runs along the polished blade. <Subject 1> answers by closing his right hand on the dark wrapped hilt at his left hip and drawing his sword from the black scabbard with a low scraping ring, the tassel swinging. The camera performs a slow arc shot with small amplitude around the pair, moving from her side toward his. Both settle into guard stances about three steps apart, blades raised at chest height and angled toward each other, eyes locked. The wind picks up, pulling her sheer sleeves and his robe hem sideways, and loose bamboo leaves skitter across the ground between their feet. The shot ends on a medium-wide view of both holding their stances, motionless.
+
+[33.5-42s]
+summary:
+[reference generation] <Subject 2> and <Subject 1> exchange a few measured sword strikes in the bamboo clearing, then leap apart as bamboo leaves swirl around them.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, and white boots are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same medium-wide view of <Subject 2> and <Subject 1> holding guard stances three steps apart in the bamboo clearing. They step toward each other at the same moment. Their blades meet at chest height with a sharp, ringing clash, and a small spark flashes at the point of contact. The movement is graceful and controlled, at a measured, almost dance-like pace rather than a blur: <Subject 2> turns her wrist and slides her blade along his, <Subject 1> deflects it upward, and she spins away with her sheer sleeves fanning out around her. They trade two more clean strikes, each landing with a bright metallic ring. The camera tracks with small amplitude to keep both of them in the frame. After the third strike, they both leap back and land lightly about four steps apart. The rush of air from their movements lifts the fallen bamboo leaves into a slow swirl that drifts through the moonlight and mist around them. The shot ends with both standing apart, swords lowered to their sides, breathing evenly, leaves still floating down between them.
+
+[42-50.5s]
+summary:
+[reference generation] In the bamboo clearing, <Subject 1> sheathes his sword and compliments <Subject 2>, who sheathes hers and hides a small smile.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sword with tassel, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, red lips, high ponytail with silver crown and earrings, white high-collared robe with sheer layers and silver embroidery, light-blue sash and skirt panels, white boots, and light-blue scabbard are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same view of <Subject 2> and <Subject 1> standing four steps apart with their swords lowered, bamboo leaves still drifting down between them. <Subject 1> slides his sword back into the black scabbard at his left hip with a soft click, and the corner of his mouth lifts into a faint smile. The camera pushes in with small amplitude at slow speed to a medium two-shot. <Subject 1> (S1), in a low, calm young male voice with a hint of warmth, says, <d>[Chinese] 你的剑法又精进了。</d> He closes his mouth and watches her. <Subject 2> returns her blade to the light-blue scabbard with a light metallic click, then turns her head slightly away from him; the corners of her lips curve into a small smile she tries to hide, and she does not speak. Moonlight catches the silver crown in her hair as a breeze moves her sheer sleeves. The shot ends on the medium two-shot, both relaxed, the tension gone.
+
+[50.5-59s]
+summary:
+[reference generation] <Subject 1> and <Subject 2> stand side by side and look up at the full moon as the camera rises away from the bamboo clearing.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - his facial identity, high ponytail with silver ornament, black gold-embroidered robe with navy-blue layers, belt, bracers, sheathed sword, and boots are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - her facial identity, high ponytail with silver crown, white robe with sheer layers, light-blue sash and skirt panels, and light-blue scabbard are retained.
+
+detailed_description:
+The target video is in a live-action, cinematic wuxia style at night, with cold silver-blue moonlight, thin drifting mist, and a restrained, slightly desaturated palette.
+[Shot 1] The shot opens on the same medium two-shot of <Subject 1> and <Subject 2> standing relaxed in the moonlit bamboo clearing after sheathing their swords. <Subject 2> steps beside <Subject 1>, and the two stand side by side, shoulders nearly touching, his black robe beside her white and pale-blue layers. They both lift their gaze to the full moon above the bamboo. The camera pedestals up and pulls out with large amplitude at slow speed, rising above the clearing until the two figures are small at the center of the frame, surrounded by tall bamboo swaying in the wind. Low mist spreads slowly across the clearing and through the stalks, and the moon glows behind thin clouds. The final frames hold on a wide, high view of the silent clearing, the two figures standing still together under the moonlight.
+
+[共用]
+overall_soundscape:
+A steady night wind rustles through the bamboo leaves throughout, with faint distant insects and the soft creak of swaying bamboo stalks. Fabric flutters with each movement, and dry leaves crunch softly underfoot.
+
+non_diegetic_music:
+A sparse guqin melody at a slow, steady tempo over a soft sustained low string drone, keeping a constant, quiet volume throughout.
