@@ -17,7 +17,7 @@ import comfy.utils
 import latent_preview
 from comfy_extras.nodes_custom_sampler import Guider_Basic
 
-from . import assemble, continuation, timing
+from . import assemble, continuation, refs, timing
 from .conditioning import ConditioningBuilder, empty_av_latent
 from .media import Media
 from .prompts import split_prompts
@@ -244,6 +244,34 @@ def _progressive_continuation(model, builder, positive, target, video_ctx, audio
     return _sample(model, positive, clean, sigmas[k:], sampler, seed, noise=noise, mask=mask)
 
 
+def _select_references(prompts: list[str], full_prompt: str, media: Media, report: Reporter):
+    """Give each segment only the references its prompt names (see refs.py)."""
+    catalog = refs.Catalog(
+        pictures=len(media.ref_images),
+        video_sound=tuple(i < len(media.video_audios) and media.video_audios[i] is not None
+                          for i in range(len(media.videos))),
+        audios=len(media.audios))
+    missing = refs.select(full_prompt, catalog, set()).missing
+    if missing:
+        report.add(f"提示：提示词里的 {'、'.join(missing)} 在素材加载器里没有对应素材")
+    active = refs.active_types(full_prompt, catalog)
+    if not active:
+        return prompts, [None] * len(prompts)
+    selections = [refs.select(prompt, catalog, active) for prompt in prompts]
+    report.add("参考素材按段分配：每段只用它提示词里提到的（编号已按这一段重新排）")
+    for i, selection in enumerate(selections):
+        report.add(f"  第 {i + 1} 段：{refs.describe(selection)}")
+    unused = []
+    for kind, count, label in (("pictures", catalog.pictures, "图"), ("videos", len(catalog.video_sound), "视频"),
+                               ("audios", catalog.audios, "音频")):
+        if kind in active:
+            used = {i for selection in selections for i in getattr(selection, kind)}
+            unused += [f"{label}{i + 1}" for i in range(count) if i not in used]
+    if unused:
+        report.add(f"提示：{'、'.join(unused)} 没有在任何一段的提示词里提到，没有使用")
+    return [s.prompt for s in selections], [(s.pictures, s.videos, s.audios) for s in selections]
+
+
 def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | None,
         learned_upscaler=None) -> Result:
     report = Reporter()
@@ -279,6 +307,9 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         report.add("提示：图文模式不使用参考图/参考视频（要用请切到参考模式）")
     if not image_mode and (media.first_frame is not None or media.last_frame is not None):
         report.add("提示：参考模式不使用首帧/尾帧（要用请切到图文模式）")
+    picks = [None] * len(segments)
+    if not image_mode:
+        prompts, picks = _select_references(prompts, settings.prompt, media, report)
     if image_mode:
         # The output keeps the size you set. Core would stretch a first frame of another shape,
         # so crop both frames to the output's aspect ratio first (keeps the middle, no distortion).
@@ -306,7 +337,7 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
                 guide = assemble.slice_audio(lock_source, *seg.window_seconds)
             positive, latent = builder.image_mode(prompt, seg, seg.index == len(segments) - 1, guide)
         else:
-            positive, latent = builder.reference_mode(prompt, seg)
+            positive, latent = builder.reference_mode(prompt, seg, picks[seg.index])
         conds.append((positive, latent["samples"]))
     report.add("条件编码完成")
     if settings.low_vram:

@@ -374,6 +374,50 @@ def test_reference_mode_full_limits():
     assert kinds == ["image"] * 9 + ["video_audio", "video", "video_audio"] + ["audio"] * 3
 
 
+def test_reference_mode_sends_each_segment_only_its_references(env, monkeypatch):
+    from comfy_extras import nodes_minimax_h3 as core_h3
+    from h3easy.media import Media
+
+    pipeline = env["pipeline"]
+    calls = []
+    original = core_h3.MiniMaxH3ReferenceToVideo.execute
+
+    def spy(**kwargs):
+        sizes = [tuple(img.shape[1:3]) for img in (kwargs["ref_images"] or {}).values()]
+        calls.append((kwargs["prompt"], sizes, len(kwargs["ref_audios"] or {})))
+        return original(**kwargs)
+
+    monkeypatch.setattr(core_h3.MiniMaxH3ReferenceToVideo, "execute", spy)
+    # sizes tell the images apart: picture 1 is 64x64, picture 2 64x128, picture 3 128x64
+    media = Media(ref_images=[torch.rand(1, 64, 64, 3), torch.rand(1, 64, 128, 3), torch.rand(1, 128, 64, 3)],
+                  audios=[_audio(1.0)])
+    prompt = ("Cinematic.\n[0-4s]\n<Picture 1> walks alone.\n[4-8s]\n<Picture 1> meets <Picture 3>.\n"
+              "[8-12s]\nAn empty street at dawn.\n[共用]\nWind.")
+    result = pipeline.run(_settings(pipeline, mode=pipeline.MODE_REFERENCE, segments=3, prompt=prompt),
+                          env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(), media)
+    assert [c[0] for c in calls] == [
+        "Cinematic.\n\n<Picture 1> walks alone.\n\nWind.",
+        "Cinematic.\n\n<Picture 1> meets <Picture 2>.\n\nWind.",
+        "Cinematic.\n\nAn empty street at dawn.\n\nWind.",
+    ]
+    assert [c[1] for c in calls] == [[(64, 64)], [(64, 64), (128, 64)], []]
+    # the audio file is never named, so every segment keeps it
+    assert [c[2] for c in calls] == [1, 1, 1]
+    assert "第 2 段：图1、图3、音频1" in result.report
+    assert "图2 没有在任何一段的提示词里提到" in result.report
+    assert torch.isfinite(result.images).all()
+
+
+def test_reference_mode_reports_unknown_tags(env):
+    from h3easy.media import Media
+
+    pipeline = env["pipeline"]
+    media = Media(ref_images=[torch.rand(1, 64, 64, 3)])
+    result = pipeline.run(_settings(pipeline, mode=pipeline.MODE_REFERENCE, prompt="<Picture 1> and <Picture 4>"),
+                          env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(), media)
+    assert "<Picture 4> 在素材加载器里没有对应素材" in result.report
+
+
 def test_image_mode_ignores_reference_media(env):
     pipeline = env["pipeline"]
     from h3easy.media import Media

@@ -11,6 +11,7 @@
 | 参考模式 | 最多 9 张参考图 + 3 段参考视频 + 3 段参考音频（提示词里写 `<Picture 1>`、`<Video 1>`、`<Audio 1>`） |
 | 锁定音频 | 图文模式下上传音频：用它引导口型和节奏，**最终输出原音频**；不上传就由 H3 自己生成声音 |
 | 长视频多段续写 | 每段精确接着上一段最后 39 帧（约 1.6 秒）继续生成，音画严格对齐 |
+| 按段分配参考素材 | 参考模式下每段只用它提示词里提到的参考图 / 视频 / 音频，多人物、多场景、多道具的短剧不会互相串 |
 | 渐进加速 | 第 1 段前期在小分辨率下生成再放大，省时间和显存 |
 | TST 防闪烁 | 实验功能：改善帧间闪烁、人物漂移 |
 | 低显存模式 | 各阶段之间卸载用完的模型，适合 16G 显卡 |
@@ -184,6 +185,39 @@ MiniMax 官方发布了 H3 写提示词的 skill：[h3-prompt-writing](https://g
 
 插件会给每一段拼出一份完整的六段（或三段）提示词。
 
+#### 每段只用它提到的素材（参考模式）
+
+短剧里常有多个人物、场景、道具，但每段只出现其中几个。插件会看每一段最终的提示词里写了哪些 `<Picture N>` / `<Video N>` / `<Audio N>`，**只把这些素材发给这一段**，并把编号自动改成这一段内部的顺序（H3 按收到的顺序给素材编号）：
+
+- 你始终按**素材加载器里的编号**写，比如参考图 5 是寺院场景，就一直写 `<Picture 5>`。
+- 某一段只写了 `<Picture 2>` 和 `<Picture 5>`：这一段只收到这两张，提示词里自动变成 `<Picture 1>`、`<Picture 2>`。没提到的人物和场景不会被带进来，计算量也更小。
+- 某一类素材在整个提示词里一次都没提到（比如加了一段参考音频但从没写 `<Audio N>`），这一类照旧每段都给。
+- 参考视频和它的音轨是一体的：写了 `<Video N>` 或它音轨的 `<Audio N>`，两者一起发送。
+- 每段实际用了哪些素材、哪些素材一段都没用到、哪些编号在加载器里不存在，都会写在报告里。
+
+所以多人物、多场景时，把 `subject_definitions` 写进**每一段自己的时间标题下面**，只定义这一段真正出现的人物、场景、道具（官方规则也是只定义目标视频里用到的内容）。`<Subject N>` 每段从 1 开始编号即可，同一个角色的描述文字每段保持一致：
+
+```text
+[0-10s]
+subject_definitions:
+<Subject 1> is the young swordsman whose costume comes from <Picture 1> and whose facial identity comes from <Picture 2>, ...
+<Subject 2> is the temple courtyard environment in <Picture 5>, featuring ...
+
+summary:
+...
+
+[10-20.75s]
+subject_definitions:
+<Subject 1> is the young swordsman whose costume comes from <Picture 1> and whose facial identity comes from <Picture 2>, ...
+<Subject 2> is the young swordswoman whose costume comes from <Picture 3> and whose facial identity comes from <Picture 4>, ...
+<Subject 3> is the jade pendant in <Picture 6>, ...
+
+summary:
+...
+```
+
+如果把所有人物都写在最上面的共用区，每段都会提到全部参考图，效果就和以前一样：每段收到所有素材。
+
 注意每段是单独生成的一个片段：
 - 第 1 段从 0 秒开始。
 - 第 2 段起，片段开头约 1.6 秒是接上一段的画面，所以 `[Shot 1]` 要从上一段结尾的状态写起，例如 `The shot opens on the same medium two-shot ...`。
@@ -227,7 +261,7 @@ MiniMax 官方发布了 H3 写提示词的 skill：[h3-prompt-writing](https://g
 ## 运行报告
 
 「报告」输出会记录：
-- 模式和用到的素材；
+- 模式和用到的素材；参考模式下每段分到了哪些参考素材；
 - 每段的时间范围和帧数；
 - 渐进加速在哪一步切换；
 - 每段的采样耗时；

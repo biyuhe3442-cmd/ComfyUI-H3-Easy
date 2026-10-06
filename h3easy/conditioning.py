@@ -47,18 +47,21 @@ class ConditioningBuilder:
         return positive, latent
 
     # ---- reference mode (ref2va) ----
-    def reference_mode(self, prompt: str, segment: Segment):
-        key = ("reference", prompt, segment.frames)
+    def reference_mode(self, prompt: str, segment: Segment, picks: tuple | None = None):
+        """``picks``: (pictures, videos, audios) loader indices this segment uses; None = all."""
+        key = ("reference", prompt, segment.frames, picks)
         if key not in self._cache:
             media = self.media
-            ref_images = {f"ref_image_{i + 1}": img for i, img in enumerate(media.ref_images)}
+            pictures, videos, audios = picks or (range(len(media.ref_images)), range(len(media.videos)),
+                                                 range(len(media.audios)))
+            ref_images = {f"ref_image_{n + 1}": media.ref_images[i] for n, i in enumerate(pictures)}
             ref_videos, ref_video_audios = {}, {}
-            for i, video in enumerate(media.videos):
-                ref_videos[f"ref_video_{i + 1}"] = video
+            for n, i in enumerate(videos):
+                ref_videos[f"ref_video_{n + 1}"] = media.videos[i]
                 soundtrack = media.video_audios[i] if i < len(media.video_audios) else None
                 if soundtrack is not None:
-                    ref_video_audios[f"ref_video_audio_{i + 1}"] = soundtrack
-            ref_audios = {f"ref_audio_{i + 1}": audio for i, audio in enumerate(media.audios)}
+                    ref_video_audios[f"ref_video_audio_{n + 1}"] = soundtrack
+            ref_audios = {f"ref_audio_{n + 1}": media.audios[i] for n, i in enumerate(audios)}
             self._cache[key] = _out(core_h3.MiniMaxH3ReferenceToVideo.execute(
                 clip=self.clip, prompt=prompt, width=self.width, height=self.height,
                 length=segment.frames, ref_image_size=self.ref_image_size,
