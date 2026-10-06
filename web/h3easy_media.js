@@ -83,6 +83,8 @@ const STYLE = `
 .h3e-btn:hover{border-color:#d33;color:#f88}
 .h3e-toast{color:#7fd17f;font-size:11px;opacity:0;transition:opacity .2s}
 .h3e-show{opacity:1}
+.h3e-moving{opacity:.35}
+.h3e-grip{cursor:grab}
 `;
 
 function ensureStyle() {
@@ -264,6 +266,10 @@ function sizeForAspect(image, output) {
     return { w: snap(Math.sqrt(area * ratio)), h: snap(Math.sqrt(area / ratio)) };
 }
 
+// the list item being dragged to a new position inside a panel (not a file drag)
+let moving = null;
+const TAG = /<\s*(Picture|Video|Audio)\s*(\d+)\s*>/gi;
+
 function linkedGenerators(node) {
     const graph = node.graph;
     const out = [];
@@ -353,14 +359,112 @@ class MediaPanel {
         this.render();
     }
 
+    moveInList(names, from, to) {
+        const values = this.list(names);
+        if (from === to || from >= values.length || to >= values.length) return;
+        const order = values.map((_, i) => i);  // order[k] = old index now at position k
+        order.splice(to, 0, order.splice(from, 1)[0]);
+        const maps = this.labelMaps(names, values, order);
+        this.writeList(names, order.map((i) => values[i]));
+        const result = this.renumberPrompts(maps);
+        this.render();
+        this.toast(result === "updated" ? "已调整顺序，提示词里的编号已跟着改"
+            : result === "linked" ? "已调整顺序（提示词来自连线，编号请手动改）" : "已调整顺序", 2500);
+    }
+
+    // old tag number -> new tag number per tag type, for a reorder of one list
+    labelMaps(names, values, order) {
+        const moved = {};
+        order.forEach((old, k) => { moved[old + 1] = k + 1; });
+        if (names === REFS) return { picture: moved };
+        // <Audio j>: soundtracks of the videos that have one come first, then standalone audio
+        const videos = names === VIDEOS ? values : this.list(VIDEOS);
+        const infos = videos.map((name) => mediaInfo(name, () => {}));
+        const known = infos.every(Boolean);
+        if (names === VIDEOS) {
+            const audio = {};
+            if (known) {
+                const label = (list) => {
+                    let next = 0;
+                    return list.map((i) => (infos[i].has_audio ? ++next : null));
+                };
+                const before = label(values.map((_, i) => i));
+                const after = label(order);
+                order.forEach((old, k) => { if (before[old]) audio[before[old]] = after[k]; });
+            }
+            return { video: moved, audio };
+        }
+        if (!known) return {};
+        const offset = infos.filter((info) => info.has_audio).length;
+        const audio = {};
+        for (const [old, now] of Object.entries(moved)) audio[Number(old) + offset] = now + offset;
+        return { audio };
+    }
+
+    renumberPrompts(maps) {
+        let result = null;
+        for (const generator of linkedGenerators(this.node)) {
+            const widget = findWidget(generator, "prompt");
+            if (!widget || typeof widget.value !== "string") continue;
+            if (generator.inputs?.find((i) => i.name === "prompt")?.link != null) {
+                result = result || "linked";
+                continue;
+            }
+            const text = widget.value.replace(TAG, (tag, kind, n) => {
+                const now = maps[kind.toLowerCase()]?.[n];
+                return now ? `<${kind[0].toUpperCase()}${kind.slice(1).toLowerCase()} ${now}>` : tag;
+            });
+            if (text !== widget.value) {
+                widget.value = text;
+                widget.callback?.(text);
+                generator.setDirtyCanvas?.(true, true);
+                result = "updated";
+            }
+        }
+        return result;
+    }
+
     // ---------- small builders ----------
-    dropTarget(target, kind, onFiles) {
-        target.addEventListener("dragover", () => target.classList.add("h3e-over"));
+    // ``slot`` ({names, index}) also accepts list items dragged here from the same list
+    dropTarget(target, kind, onFiles, slot = null) {
+        const accepts = () => !moving || (slot && moving.panel === this && moving.names === slot.names);
+        target.addEventListener("dragover", (e) => {
+            if (!accepts()) return;
+            if (moving && e.dataTransfer) e.dataTransfer.dropEffect = "move";
+            target.classList.add("h3e-over");
+        });
         target.addEventListener("dragleave", () => target.classList.remove("h3e-over"));
         target.addEventListener("drop", (e) => {
             target.classList.remove("h3e-over");
+            if (moving) {
+                if (accepts()) this.moveInList(slot.names, moving.index, slot.index);
+                return;
+            }
             const files = Array.from(e.dataTransfer?.files || []).filter((f) => DROP_KINDS[kind].includes(kindOf(f)));
             if (files.length) onFiles(files);
+        });
+    }
+
+    // let a list item be dragged onto another item of the same list to take its place
+    movable(handle, names, index, item = handle) {
+        handle.draggable = true;
+        handle.classList.add("h3e-grip");
+        // keep the node from starting its own drag
+        handle.addEventListener("pointerdown", (e) => e.stopPropagation());
+        handle.addEventListener("dragstart", (e) => {
+            e.stopPropagation();
+            moving = { panel: this, names, index };
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/x-h3e-move", String(index));
+                if (item !== handle) e.dataTransfer.setDragImage(item, 12, 12);
+            }
+            item.classList.add("h3e-moving");
+        });
+        handle.addEventListener("dragend", () => {
+            moving = null;
+            item.classList.remove("h3e-moving");
+            this.root.querySelectorAll(".h3e-over").forEach((n) => n.classList.remove("h3e-over"));
         });
     }
 
@@ -399,15 +503,16 @@ class MediaPanel {
         return card;
     }
 
-    imageCard(value, shape, badge, onFiles, onRemove) {
+    imageCard(value, shape, badge, onFiles, onRemove, slot = null) {
         const card = el("div", `h3e-card h3e-filled ${shape || ""}`);
         const img = el("img");
         img.src = viewUrl(value);
         img.alt = typeof badge === "string" ? badge : badge.dataset.text;
-        card.title = `${value}\n点击替换`;
+        card.title = slot ? `${value}\n点击替换，拖到别的图上调整顺序` : `${value}\n点击替换`;
         card.append(img, this.removeButton(onRemove), typeof badge === "string" ? el("span", "h3e-badge", badge) : badge);
         card.addEventListener("click", async () => onFiles(await pickFiles("image", false)));
-        this.dropTarget(card, "image", onFiles);
+        this.dropTarget(card, "image", onFiles, slot);
+        if (slot) this.movable(card, slot.names, slot.index);
         return card;
     }
 
@@ -605,11 +710,11 @@ class MediaPanel {
 
     refImagesSection() {
         const refs = this.list(REFS);
-        const section = this.section(`参考图 ${refs.length}/${LIMIT.image}`, "提示词里写 <Picture N>");
+        const section = this.section(`参考图 ${refs.length}/${LIMIT.image}`, "提示词里写 <Picture N>；拖动调整顺序");
         const ratio = cellRatio(refs.map((value) => ratioOf(mediaSize(value, "image", () => this.renderSoon()))), 1);
         const items = refs.map((value, i) => {
             const card = this.imageCard(value, "", this.tag(`<Picture ${i + 1}>`, "h3e-badge", `图${i + 1}`),
-                (f) => this.putInList(REFS, i, f), () => this.removeFromList(REFS, i));
+                (f) => this.putInList(REFS, i, f), () => this.removeFromList(REFS, i), { names: REFS, index: i });
             card.style.aspectRatio = String(ratio);
             return card;
         });
@@ -670,10 +775,11 @@ class MediaPanel {
                     play.textContent = "▶";
                 }
             });
-            card.title = `${value}\n点击替换`;
+            card.title = videos.length > 1 ? `${value}\n点击替换，拖到别的视频上调整顺序` : `${value}\n点击替换`;
             card.append(video, play, this.removeButton(() => this.removeFromList(VIDEOS, i)));
             card.addEventListener("click", async () => this.putInList(VIDEOS, i, await pickFiles("video", false)));
-            this.dropTarget(card, "video", (f) => this.putInList(VIDEOS, i, f));
+            this.dropTarget(card, "video", (f) => this.putInList(VIDEOS, i, f), { names: VIDEOS, index: i });
+            this.movable(card, VIDEOS, i, item);
 
             const caption = el("div", "h3e-caption");
             caption.append(this.tag(`<Video ${i + 1}>`, "h3e-chip", `视频${i + 1}`));
@@ -702,7 +808,7 @@ class MediaPanel {
         return section;
     }
 
-    audioItem(names, index, value, tagNumber) {
+    audioItem(names, index, value, tagNumber, reorder = false) {
         const box = el("div", "h3e-audio");
         const line = el("div", "h3e-line");
         line.append(el("span", "h3e-name", `🎵 ${value}`));
@@ -714,7 +820,11 @@ class MediaPanel {
         player.preload = "metadata";
         player.src = viewUrl(value);
         box.append(line, player, this.removeButton(() => this.removeFromList(names, index)));
-        this.dropTarget(box, "audio", (f) => this.putInList(names, index, f));
+        this.dropTarget(box, "audio", (f) => this.putInList(names, index, f), reorder ? { names, index } : null);
+        if (reorder) {
+            line.title = "拖到别的音频上调整顺序";
+            this.movable(line, names, index, box);
+        }
         return box;
     }
 
@@ -723,7 +833,7 @@ class MediaPanel {
         const offset = tracks.filter((t) => t.audioTag).length;
         const known = tracks.every((t) => t.info);
         const section = this.section(`参考音频 ${audios.length}/${LIMIT.audio}`, "提示词里写 <Audio N>（视频音轨排在前面）");
-        audios.forEach((value, i) => section.append(this.audioItem(AUDIOS, i, value, known ? offset + i + 1 : null)));
+        audios.forEach((value, i) => section.append(this.audioItem(AUDIOS, i, value, known ? offset + i + 1 : null, true)));
         if (audios.length < LIMIT.audio) {
             section.append(this.addCard("audio", audios.length ? "添加音频" : "添加参考音频（可多选）", "h3e-add-row", true,
                 (f) => this.putInList(AUDIOS, audios.length, f)));
