@@ -1,4 +1,4 @@
-"""ComfyUI nodes: H3 素材加载器, H3 一键生成 and H3 小脸精修."""
+"""ComfyUI nodes: H3 素材加载器 and H3 一键生成."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from comfy_api.latest import InputImpl, Types, io
 from . import media as media_io
 from .media import AUDIO_SLOTS, NONE, REF_SLOTS, VIDEO_SLOTS, Media
 from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run
-from .refine import RefineSettings, refine_video
 
 CATEGORY = "H3 Easy"
 MediaType = io.Custom("H3_EASY_MEDIA")
@@ -222,87 +221,4 @@ class H3EasyGenerate(io.ComfyNode):
         return io.NodeOutput(video, result.images, result.audio, result.report)
 
 
-class H3EasyFaceRefine(io.ComfyNode):
-    @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="H3EasyFaceRefine",
-            display_name="H3 小脸精修",
-            category=CATEGORY,
-            description=(
-                "自动找出视频里的小脸，把每张脸裁出来放大到高分辨率，只重画最后几步补细节（保留动作和口型），"
-                "再缩回去、对齐颜色、羽化贴回。只算脸那一小块，比整体提高分辨率省得多。"
-            ),
-            inputs=[
-                io.Combo.Input("mode", options=[MODE_IMAGE, MODE_REFERENCE], default=MODE_REFERENCE,
-                               display_name="模型类型",
-                               tooltip="和下面接的模型对应：图文模型(fl2va) 选图文模式，参考模型(ref2va) 选参考模式。"
-                                       "用和生成时同一个模型，不用再加载第二个。"),
-                io.Model.Input("model", display_name="模型"),
-                io.Clip.Input("clip", display_name="文本编码器"),
-                io.Vae.Input("video_vae", display_name="视频VAE"),
-                io.Vae.Input("audio_vae", display_name="音频VAE"),
-                io.Image.Input("images", display_name="画面", tooltip="接「H3 一键生成」的「画面」输出。"),
-                io.Audio.Input("audio", optional=True, display_name="音频",
-                               tooltip="接「H3 一键生成」的「音频」输出：精修时声音保持不变，帮助口型对齐，也会合进输出视频。"),
-                MediaType.Input("media", optional=True, display_name="参考图（可选）",
-                                tooltip="参考模式可用：接一个只放这个角色大头照的素材加载器，精修出的脸会向它靠拢。"
-                                        "有多个角色时，配合「只修这些脸」一个角色一个精修节点。"),
-                io.Mask.Input("mask", optional=True, display_name="人脸遮罩（可选）",
-                              tooltip="可选：用其他人脸检测节点（例如 Impact Pack）的逐帧遮罩代替内置检测。"),
-                io.String.Input("prompt", multiline=True, default="", display_name="提示词",
-                                tooltip="留空用内置的「脸部特写精修」提示词（官方结构）。"),
-                io.String.Input("faces", default="", display_name="只修这些脸",
-                                tooltip="填脸的编号，例如 1,3；留空修所有小脸。编号见「报告」：按出现先后、从左到右编号。"),
-                io.Int.Input("max_face", default=128, min=16, max=1024, step=8, display_name="只修小于(px)的脸",
-                             tooltip="脸的高度超过这个像素就不修（已经够清楚，省时间）。"),
-                io.Combo.Input("refine_size", options=["384", "512", "640", "768"], default="384",
-                               display_name="精修分辨率",
-                               tooltip="脸部裁剪放大到多大来重画。裁剪最多放大 4 倍，所以脸小于约 45px 时 512 只多带背景、"
-                                       "不多画脸，384 就够；脸更大时 512 更清楚，但时间约翻倍。"),
-                io.Int.Input("steps", default=6, min=2, max=30, display_name="精修步数",
-                             tooltip="实际跑的采样步数。6 步一般够用。"),
-                io.Float.Input("strength", default=0.4, min=0.1, max=0.8, step=0.05, display_name="重画强度",
-                               tooltip="精修开始时混进脸部画面的噪声比例：0.4 = 保留 60% 原画面。越大细节补得越多，"
-                                       "但长相、口型越可能变；0.3 很保守，0.5 以上可能改长相。"),
-                io.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
-                             display_name="种子"),
-                io.Boolean.Input("low_vram", default=True, display_name="低显存模式"),
-                io.Combo.Input("sampler_name", options=comfy.samplers.KSampler.SAMPLERS, default="res_multistep",
-                               display_name="采样器", advanced=True),
-                io.Combo.Input("scheduler", options=comfy.samplers.KSampler.SCHEDULERS, default="simple",
-                               display_name="调度器", advanced=True,
-                               tooltip="精修不用这个：步数按「重画强度」自动从噪声排到 0。保留只是为了兼容旧工作流。"),
-                io.Float.Input("context", default=2.2, min=1.4, max=4.0, step=0.1, display_name="裁剪范围",
-                               advanced=True, tooltip="裁剪边长 = 脸的大小 × 这个倍数。大一点带上更多头发和肩膀，贴回去更自然。"),
-                io.Float.Input("feather", default=0.15, min=0.0, max=0.4, step=0.01, display_name="边缘羽化",
-                               advanced=True, tooltip="只贴回脸和头发的椭圆区域，这个值控制椭圆边缘过渡的宽度，背景保持原样。"),
-                io.Float.Input("detect_score", default=0.7, min=0.3, max=0.95, step=0.05, display_name="检测阈值",
-                               advanced=True, tooltip="越低越容易找到侧脸、小脸，但也更容易误检。"),
-                io.Combo.Input("ref_image_size", options=["match", "max"], default="max",
-                               display_name="参考图尺寸", advanced=True,
-                               tooltip="精修的画面很小，match 会把参考图也缩到那么小；max 保留细节，这里只多约 4% 计算量。"),
-            ],
-            outputs=[
-                io.Video.Output(display_name="视频"),
-                io.Image.Output(display_name="画面"),
-                io.String.Output(display_name="报告"),
-            ],
-        )
-
-    @classmethod
-    def execute(cls, mode, model, clip, video_vae, audio_vae, images, prompt, faces, max_face, refine_size,
-                steps, strength, seed, low_vram, sampler_name="res_multistep", scheduler="simple", context=2.2,
-                feather=0.15, detect_score=0.7, ref_image_size="max", audio=None, media=None,
-                mask=None) -> io.NodeOutput:
-        settings = RefineSettings(
-            mode=mode, prompt=prompt, faces=faces, max_face=max_face, refine_size=int(refine_size), steps=steps,
-            strength=strength, seed=seed, sampler_name=sampler_name, scheduler=scheduler, context=context,
-            feather=feather, detect_score=detect_score, ref_image_size=ref_image_size, low_vram=low_vram,
-        )
-        out, report = refine_video(settings, model, clip, video_vae, audio_vae, images, audio, media, mask)
-        video = InputImpl.VideoFromComponents(Types.VideoComponents(images=out, audio=audio, frame_rate=Fraction(24)))
-        return io.NodeOutput(video, out, report)
-
-
-NODES = [H3EasyMediaLoader, H3EasyGenerate, H3EasyFaceRefine]
+NODES = [H3EasyMediaLoader, H3EasyGenerate]

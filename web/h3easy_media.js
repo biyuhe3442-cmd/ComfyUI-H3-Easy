@@ -7,7 +7,6 @@ import { api } from "../../scripts/api.js";
 // what that mode uses: filled items plus one "add" card until the H3 limit.
 const LOADER = "H3EasyMediaLoader";
 const GENERATOR = "H3EasyGenerate";
-const REFINER = "H3EasyFaceRefine";
 const MODE_IMAGE = "图文模式（文生 / 首尾帧）";
 const MODE_REFERENCE = "参考模式（多图 / 视频参考）";
 const NONE = "无";
@@ -265,18 +264,16 @@ function sizeForAspect(image, output) {
     return { w: snap(Math.sqrt(area * ratio)), h: snap(Math.sqrt(area / ratio)) };
 }
 
-function linkedTargets(node, type) {
+function linkedGenerators(node) {
     const graph = node.graph;
     const out = [];
     for (const id of node.outputs?.[0]?.links || []) {
         const link = graph?.getLink?.(id) ?? graph?.links?.get?.(id) ?? graph?.links?.[id];
         const target = link && graph.getNodeById(link.target_id);
-        if (target && (target.comfyClass || target.type) === type) out.push(target);
+        if (target && (target.comfyClass || target.type) === GENERATOR) out.push(target);
     }
     return out;
 }
-
-const linkedGenerators = (node) => linkedTargets(node, GENERATOR);
 
 function loadersFeeding(generator) {
     const graph = generator.graph;
@@ -314,8 +311,7 @@ class MediaPanel {
 
     mode() {
         const generators = linkedGenerators(this.node);
-        // feeding only 「H3 小脸精修」: it uses the reference images (headshots) and nothing else
-        if (!generators.length) return linkedTargets(this.node, REFINER).length ? "reference" : null;
+        if (!generators.length) return null;
         return findWidget(generators[0], "mode")?.value === MODE_REFERENCE ? "reference" : "image";
     }
 
@@ -792,21 +788,16 @@ class MediaPanel {
         const bar = el("div", "h3e-modebar");
         const pill = el("span", `h3e-pill${mode === "reference" ? " h3e-ref" : mode ? "" : " h3e-all"}`,
             mode === "reference" ? "参考模式" : mode === "image" ? "图文模式" : "全部素材");
-        const forRefine = mode && !linkedGenerators(this.node).length;
-        bar.append(pill, el("span", "", forRefine
-            ? "接在「H3 小脸精修」上：只用参考图，放这个角色的大头照"
-            : mode
-                ? "跟随「H3 一键生成」的模式，只显示这个模式用得到的素材"
-                : "还没连接「H3 一键生成」，先显示全部素材"));
+        bar.append(pill, el("span", "", mode
+            ? "跟随「H3 一键生成」的模式，只显示这个模式用得到的素材"
+            : "还没连接「H3 一键生成」，先显示全部素材"));
         inner.append(bar);
 
         if (mode !== "reference") {
             inner.append(this.framesSection());
             if (mode === "image") inner.append(this.lockAudioSection());
         }
-        if (forRefine) {
-            inner.append(this.refImagesSection());
-        } else if (mode !== "image") {
+        if (mode !== "image") {
             const tracks = this.videoTracks(this.list(VIDEOS));
             inner.append(this.refImagesSection(), this.refVideosSection(tracks), this.refAudiosSection(tracks));
         }
