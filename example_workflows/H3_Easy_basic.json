@@ -1,8 +1,8 @@
 {
   "id": "d05d95d9-d5ad-4a4b-9344-a7fd197c4e02",
   "revision": 0,
-  "last_node_id": 11,
-  "last_link_id": 9,
+  "last_node_id": 12,
+  "last_link_id": 10,
   "nodes": [
     {
       "id": 1,
@@ -24,10 +24,10 @@
       "title": "📖 使用说明（先看这里）",
       "properties": {},
       "widgets_values": [
-        "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；把卡片拖到另一张卡片上可以调整顺序（提示词里的编号会跟着改）；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
+        "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；把卡片拖到另一张卡片上可以调整顺序（提示词里的编号会跟着改）；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。\n\n---\n\n**出片清单（一次出一整集）**\n1. 不会写提示词：在素材面板点「复制 AI 模板」，粘贴给豆包、DeepSeek 等任意 AI（它嫌太长就点「下载模板」，把文件发给它），再把参考图和剧情发给它。把它回的清单复制回来，点「粘贴清单」。已经有清单文件就直接拖到面板上。\n2. 面板会把清单里要的素材列成卡片，缺的标「缺」：把参考图、音频、视频一起拖到面板上，顺序随便；名字对不上就拖到对应的那张卡片上。\n3. 打开「参考模型 ref2va」（清单里有首帧模式的镜头时，「图文模型 fl2va」也要开着），点运行。\n\n每个镜头的时长、模式、用哪几张图都按清单来，节点上的模式、段数、每段秒数、种子不用管。哪个镜头不满意，在面板的「镜头」一栏点它后面的「重抽」再运行，只重新生成它。想要每个镜头单独一个文件，打开「保存分镜头」。"
       ],
       "widgets_values_named": {
-        "text": "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；把卡片拖到另一张卡片上可以调整顺序（提示词里的编号会跟着改）；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。"
+        "text": "## H3 一键生成 · 使用说明\n\n**1. 选模式**（「H3 一键生成」的第一个选项）\n- **图文模式**：只写提示词＝文生视频；在素材加载器里放首帧/尾帧图＝首尾帧生视频；放了音频＝**锁定音频**（用它对口型，最终输出原音频）。\n- **参考模式**：在素材加载器里放参考图（提示词里用 `<Picture 1>`、`<Picture 2>` 指代）、参考视频、参考音频。\n\n**2. 放素材**：「H3 素材加载器」会**跟随「H3 一键生成」里选的模式**，只显示用得到的素材——图文模式：首帧、尾帧、锁定音频；参考模式：最多 9 张参考图、3 段参考视频、3 段参考音频（官方上限）。点卡片选文件或直接拖进去，可以多选；把卡片拖到另一张卡片上可以调整顺序（提示词里的编号会跟着改）；点 `<Picture N>` / `<Video N>` / `<Audio N>` 标签会复制到剪贴板。不用的不放即可。\n\n**3. 写提示词**：多段时按时间轴写，每段一节：\n`[0-6s]` 换行写第 1 段，`[6-12s]` 换行写第 2 段……；标题上面的文字所有段共用。\n\n**4. 设置段数和每段秒数**：段数＞1 时自动续写（每段接着上一段最后约 1.6 秒）。实际时长会对齐到 H3 的音画网格，看「报告」。\n\n**5. 运行**，视频保存在 `ComfyUI/output/video/`。\n\n---\n\n**模型开关（紫色＝已关闭，选中后按 Ctrl+B 切换）**\n- 图文模式用「图文模型 fl2va」。\n- 参考模式要先打开「参考模型 ref2va」。不用的那个保持关闭，不会被加载。\n- 想提速：打开「Turbo LoRA（8 步）」并把**步数改成 8**。\n\n**16G 显卡建议**：保持「低显存模式」开启；分辨率先用 1024×576；第一次先跑 1 段确认能出片。\n\n---\n\n**出片清单（一次出一整集）**\n1. 不会写提示词：在素材面板点「复制 AI 模板」，粘贴给豆包、DeepSeek 等任意 AI（它嫌太长就点「下载模板」，把文件发给它），再把参考图和剧情发给它。把它回的清单复制回来，点「粘贴清单」。已经有清单文件就直接拖到面板上。\n2. 面板会把清单里要的素材列成卡片，缺的标「缺」：把参考图、音频、视频一起拖到面板上，顺序随便；名字对不上就拖到对应的那张卡片上。\n3. 打开「参考模型 ref2va」（清单里有首帧模式的镜头时，「图文模型 fl2va」也要开着），点运行。\n\n每个镜头的时长、模式、用哪几张图都按清单来，节点上的模式、段数、每段秒数、种子不用管。哪个镜头不满意，在面板的「镜头」一栏点它后面的「重抽」再运行，只重新生成它。想要每个镜头单独一个文件，打开「保存分镜头」。"
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -1413,6 +1413,24 @@
           "links": [
             9
           ]
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "分镜头",
+          "locked": null,
+          "name": "分镜头",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 6,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            10
+          ]
         }
       ],
       "properties": {
@@ -1654,6 +1672,139 @@
       },
       "widgets_values": [],
       "widgets_values_named": {}
+    },
+    {
+      "id": 12,
+      "type": "SaveVideo",
+      "pos": [
+        1980,
+        0
+      ],
+      "size": [
+        560,
+        560
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 4,
+      "showAdvanced": null,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "link": 10
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "filename_prefix",
+          "locked": null,
+          "name": "filename_prefix",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "format.codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format.codec"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "format",
+          "locked": null,
+          "name": "format",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "codec",
+          "locked": null,
+          "name": "codec",
+          "nameLocked": null,
+          "removable": null,
+          "shape": 7,
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": null,
+          "localized_name": "video",
+          "locked": null,
+          "name": "video",
+          "nameLocked": null,
+          "removable": null,
+          "shape": null,
+          "type": "VIDEO",
+          "pos": null,
+          "slot_index": null,
+          "links": null
+        }
+      ],
+      "title": "保存分镜头（出片清单用，Ctrl+B 打开）",
+      "properties": {},
+      "widgets_values": [
+        "video/H3_Easy_shot",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "video/H3_Easy_shot",
+        "format": "auto",
+        "format.codec": "auto",
+        "codec": "auto"
+      }
     }
   ],
   "links": [
@@ -1728,6 +1879,14 @@
       11,
       0,
       "STRING"
+    ],
+    [
+      10,
+      9,
+      4,
+      12,
+      0,
+      "VIDEO"
     ]
   ],
   "floatingLinks": null,

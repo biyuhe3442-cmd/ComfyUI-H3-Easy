@@ -275,8 +275,9 @@ def test_generate_node_end_to_end(env):
         segments=2, segment_seconds=3.5, width=512, height=320, steps=4, seed=5, lock_audio=True,
         progressive=True, tst=True, low_vram=True, sampler_name="euler", image_model=env["model"],
         media=Media(audios=[_audio(10.0)]))
-    video, images, audio, report = out.args
+    video, images, audio, report, clips = out.args
     components = video.get_components()
+    assert len(clips) == 1 and clips[0].get_components().images.shape[0] == 192
     assert images.shape == (192, 320, 512, 3)
     assert components.images.shape[0] == 192
     assert float(components.frame_rate) == 24.0
@@ -366,8 +367,8 @@ def test_reference_mode_full_limits():
                   video_audios=[_audio(1.2), None, _audio(1.0)],
                   audios=[_audio(1.0), _audio(2.0), _audio(0.5)])
     clip = RecordingClip()
-    builder = ConditioningBuilder(clip, FakeVideoVAE(), FakeAudioVAE(), 512, 320, media)
-    positive, _ = builder.reference_mode("x", plan_segments(1, 3.5)[0])
+    builder = ConditioningBuilder(clip, FakeVideoVAE(), FakeAudioVAE(), 512, 320)
+    positive, _ = builder.reference_mode("x", plan_segments(1, 3.5)[0].frames, media)
     # images, then each video preceded by its soundtrack label, then standalone audio
     assert clip.items == ["image"] * 9 + ["audio", "video", "video", "audio", "video"] + ["audio"] * 3
     kinds = [block["kind"] for block in positive[0][1]["minimax_refs"]]
@@ -517,3 +518,293 @@ def test_progressive_continuation_lock_audio_latent_method(env):
     for i in (2, 3):
         assert f"第 {i} 段渐进加速（实验）" in result.report
     assert "输出音频：原音频" in result.report
+
+
+SHOT_SHEET = """# EP01 出片清单
+
+**一共：** 3 个镜头　**画幅：** 9:16
+
+SHOT 01
+Duration: 3.5s
+Mode: Ref2VA（参考模式：接角色图、场景图）
+References:
+<Picture 1> 沈烬 —— 第 1 张接 `沈烬.png`
+<Picture 2> 断月台 —— 第 2 张接 `断月台.png`
+H3 Prompt:
+```text
+<Picture 1> walks onto <Picture 2>.
+```
+
+SHOT 02
+Duration: 2s
+Mode: Ref2VA（参考模式：接角色图、场景图）
+References:
+<Picture 1> 绯璃（角色参考板）
+<Audio 1> 她的声音：`voice.wav`
+接上一镜：续写
+H3 Prompt:
+```text
+<Picture 1> turns around and speaks in the voice of <Audio 1>.
+```
+
+SHOT 03
+Duration: 3.5s
+Mode: I2VA（首帧模式：从这张图开始）
+References:
+<Picture 1> 首帧图 —— `窗边.png`
+接上一镜：续写
+H3 Prompt:
+```text
+The woman shown in <Picture 1> looks up.
+```
+"""
+
+
+def _shot_list_inputs(folder):
+    """The files SHOT_SHEET names; image sizes tell them apart."""
+    import av
+    import numpy as np
+    from PIL import Image
+
+    (folder / "参考图").mkdir()
+    for name, (height, width) in {"沈烬.png": (64, 64), "参考图/断月台.jpg": (64, 128), "绯璃.PNG": (128, 64),
+                                  "窗边.png": (640, 360), "voice.png": (32, 32)}.items():
+        Image.fromarray(np.zeros((height, width, 3), dtype=np.uint8)).save(folder / name)
+    with av.open(str(folder / "voice.wav"), "w") as container:
+        stream = container.add_stream("pcm_s16le", rate=16000, layout="mono")
+        frame = av.AudioFrame.from_ndarray(np.zeros((1, 16000), dtype=np.float32), format="flt", layout="mono")
+        frame.sample_rate = 16000
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+
+
+def _shot_list_kwargs(env, **overrides):
+    from h3easy.pipeline import MODE_IMAGE
+    base = dict(mode=MODE_IMAGE, prompt=SHOT_SHEET, clip=FakeClip(), video_vae=FakeVideoVAE(),
+                audio_vae=FakeAudioVAE(), segments=1, segment_seconds=6.0, width=512, height=320, steps=6, seed=3,
+                lock_audio=True, progressive=True, tst=False, low_vram=False, sampler_name="euler",
+                image_model=env["model"], reference_model=env["model"])
+    base.update(overrides)
+    return base
+
+
+def test_shot_list_runs_each_card_with_its_own_media(env, tmp_path, monkeypatch):
+    import folder_paths
+    from comfy_extras import nodes_minimax_h3 as core_h3
+    from h3easy.nodes import H3EasyGenerate
+    from h3easy.pipeline import MODE_IMAGE
+
+    calls = []
+    original = core_h3.MiniMaxH3ReferenceToVideo.execute
+
+    def spy(**kwargs):
+        sizes = [tuple(img.shape[1:3]) for img in (kwargs["ref_images"] or {}).values()]
+        calls.append((kwargs["prompt"], sizes, len(kwargs["ref_audios"] or {}), kwargs["length"]))
+        return original(**kwargs)
+
+    monkeypatch.setattr(core_h3.MiniMaxH3ReferenceToVideo, "execute", spy)
+    _shot_list_inputs(tmp_path)
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+    try:
+        # both models are asked for: the list has reference shots and a first-frame shot
+        assert H3EasyGenerate.check_lazy_status(mode=MODE_IMAGE, prompt=SHOT_SHEET, image_model=None,
+                                                reference_model=None) == ["image_model", "reference_model"]
+        kwargs = _shot_list_kwargs(env)
+        video, images, audio, report, clips = H3EasyGenerate.execute(**kwargs).args
+
+        # a changed file under the same name runs the list again; an ordinary prompt has nothing to watch
+        before = H3EasyGenerate.fingerprint_inputs(prompt=SHOT_SHEET)
+        os.utime(tmp_path / "沈烬.png", (1, 1))
+        assert H3EasyGenerate.fingerprint_inputs(prompt=SHOT_SHEET) != before
+        assert H3EasyGenerate.fingerprint_inputs(prompt="a cat") == H3EasyGenerate.fingerprint_inputs()
+    finally:
+        folder_paths.set_input_directory(old)
+
+    # each card got its own files, in its own order, with its prompt untouched
+    assert calls == [
+        ("<Picture 1> walks onto <Picture 2>.", [(64, 64), (64, 128)], 0, 90),
+        ("<Picture 1> turns around and speaks in the voice of <Audio 1>.", [(128, 64)], 1, 90),
+    ]
+    # 3.75 s, then 51 new frames continuing it, then a cut to a 3.75 s first-frame shot
+    assert images.shape == (90 + 51 + 90, 320, 512, 3)
+    assert torch.isfinite(images).all()
+    assert [clip.get_components().images.shape[0] for clip in clips] == [90, 51, 90]
+    assert audio["waveform"].shape[-1] == round(231 / 24 * 32000)
+    assert clips[1].get_components().audio["waveform"].shape[-1] == 51 * 32000 // 24
+    assert video.get_components().images.shape[0] == 231
+    # only the shot that is continued is decoded with the next one's right context
+    decodes = [shape[2] for shape in kwargs["video_vae"].decodes if shape[3] == 20]
+    assert decodes == [27 + 5, 27, 27]
+
+    assert "出片清单：3 个镜头，总时长 9.62s" in report
+    assert "镜头 1：0.00–3.75s，参考模式，开头，清单 3.5 秒 → 实际 3.75 秒，素材：沈烬.png、参考图/断月台.jpg" in report
+    assert "镜头 2：3.75–5.88s，参考模式，续写，清单 2 秒 → 实际 2.12 秒，素材：绯璃.PNG、voice.wav" in report
+    assert "镜头 3：5.88–9.62s，首帧模式，硬切" in report
+    assert "镜头 3 和上一个镜头的模式不同，不能续写，按硬切处理" in report
+    assert "镜头 3 首帧 360×640 和输出 512×320 比例不同" in report
+    assert "清单写的画幅是 9:16，节点设的输出是 512×320" in report
+    # every shot that starts with a cut gets the low-resolution start
+    assert "镜头 1 渐进加速：" in report and "镜头 3 渐进加速：" in report and "镜头 2 渐进加速" not in report
+    assert "镜头 2 采样完成" in report and "镜头 3 解码完成" in report
+
+
+def test_shot_list_problems_are_reported_before_any_work(env, tmp_path):
+    import folder_paths
+    from h3easy.nodes import H3EasyGenerate
+
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+    try:
+        with pytest.raises(ValueError, match="素材没找到") as error:
+            H3EasyGenerate.execute(**_shot_list_kwargs(env))
+    finally:
+        folder_paths.set_input_directory(old)
+    # everything that is missing in one message
+    for line in ("镜头 1 的 <Picture 1>：沈烬.png", "镜头 1 的 <Picture 2>：断月台.png", "镜头 2 的 <Picture 1>：绯璃",
+                 "镜头 2 的 <Audio 1>：voice.wav", "镜头 3 的 <Picture 1>：窗边.png"):
+        assert line in str(error.value)
+
+    with pytest.raises(ValueError, match="出片清单里有参考模式的镜头，但「H3 一键生成」的「参考模型"):
+        H3EasyGenerate.execute(**_shot_list_kwargs(env, reference_model=None))
+    with pytest.raises(ValueError, match="出片清单里有读不懂的地方：\n镜头 7：没有读到时长"):
+        H3EasyGenerate.execute(**_shot_list_kwargs(env, prompt="SHOT 07\nMode: Ref2VA\nH3 Prompt:\nhello"))
+    # cards that cannot be found must not turn the whole list into one prompt
+    with pytest.raises(ValueError, match="提示词像是出片清单，但没有读到镜头卡"):
+        H3EasyGenerate.execute(**_shot_list_kwargs(env, prompt="镜头一\nDuration: 5s\nH3 Prompt:\n```text\nhi\n```"))
+
+
+def test_shot_list_files_are_found_by_name(tmp_path):
+    import folder_paths
+    from h3easy import media
+
+    _shot_list_inputs(tmp_path)
+    (tmp_path / "参考图" / "沈烬.png").write_bytes((tmp_path / "沈烬.png").read_bytes())
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+    try:
+        files = media.input_files()
+        assert "参考图/断月台.jpg" in files
+        # the same name in two places: the one at the top of the input folder
+        assert media.find_input("沈烬.png", ["image"], files) == "沈烬.png"
+        # another extension, another case, or no extension at all
+        assert media.find_input("断月台.png", ["image"], files) == "参考图/断月台.jpg"
+        assert media.find_input("绯璃", ["image"], files) == "绯璃.PNG"
+        # an image never stands in for audio
+        assert media.find_input("voice", ["audio", "video"], files) == "voice.wav"
+        assert media.find_input("voice", ["image"], files) == "voice.png"
+        assert media.find_input("../沈烬.png", ["image"], files) == "沈烬.png"
+        assert media.find_input("没有这张图.png", ["image"], files) is None
+    finally:
+        folder_paths.set_input_directory(old)
+
+
+@pytest.fixture(autouse=True)
+def _own_user_folder(tmp_path):
+    """Shot lists keep their finished shots under the user folder: stay out of the real one."""
+    import folder_paths
+    old = folder_paths.get_user_directory()
+    folder_paths.set_user_directory(str(tmp_path / "user"))
+    yield
+    folder_paths.set_user_directory(old)
+
+
+def test_shot_list_only_samples_what_changed(env, tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy import pipeline
+    from h3easy.nodes import H3EasyGenerate
+
+    sampled = []
+    original = pipeline._sample
+
+    def spy(model, positive, latent, sigmas, sampler, seed, **kwargs):
+        sampled.append(seed)
+        return original(model, positive, latent, sigmas, sampler, seed, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_sample", spy)
+    _shot_list_inputs(tmp_path)
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+
+    def run(**overrides):
+        sampled.clear()
+        out = H3EasyGenerate.execute(**_shot_list_kwargs(env, progressive=False, **overrides)).args
+        return out[1], out[3], len(sampled)
+
+    try:
+        first, report, count = run()
+        assert count == 3 and "沿用上次的结果" not in report
+        # a shot list does not go by the node's seed: the second run has nothing left to sample
+        again, report, count = run(seed=99)
+        assert count == 0 and report.count("沿用上次的结果") == 3
+        assert torch.equal(again, first)
+        # re-roll the last shot: the other two stay exactly as they were
+        third, report, count = run(shot_versions="3:2")
+        assert count == 1 and "镜头 3 采样完成" in report and report.count("沿用上次的结果") == 2
+        assert torch.equal(third[:141], first[:141]) and not torch.equal(third[141:], first[141:])
+        # re-rolling a shot also redoes the shot that continues it, but not the one after the cut
+        _, report, count = run(shot_versions="1:2")
+        assert count == 2 and "镜头 3 沿用上次的结果" in report
+        # back to the first takes: they are all still there
+        back, _, count = run()
+        assert count == 0 and torch.equal(back, first)
+        # a changed prompt or a changed file redoes just that shot
+        assert run(prompt=SHOT_SHEET.replace("looks up", "looks down"))[2] == 1
+        os.utime(tmp_path / "窗边.png", (5, 5))
+        assert run()[2] == 1
+        # so does a different sampling setting, for every shot
+        assert run(steps=5)[2] == 3
+    finally:
+        folder_paths.set_input_directory(old)
+
+
+def test_shot_store_round_trip_and_pruning(monkeypatch):
+    from h3easy import shotcache
+
+    assert shotcache.key("a", 1, [2.0]) == shotcache.key("a", 1, [2.0]) != shotcache.key("a", 1, [2.5])
+    assert shotcache.source(None) == [] and shotcache.load(shotcache.key("nothing")) is None
+    video, audio = torch.rand(1, 24, 7, 4, 6), torch.rand(1, 32, 2, 50)
+    shotcache.save("one", video, audio)
+    loaded = shotcache.load("one")
+    assert torch.equal(loaded[0], video) and torch.equal(loaded[1], audio)
+
+    size = os.path.getsize(shotcache._path("one"))
+    monkeypatch.setattr(shotcache, "LIMIT_BYTES", int(size * 2.5))
+    os.utime(shotcache._path("one"), (10, 10))
+    shotcache.save("two", video, audio)
+    os.utime(shotcache._path("two"), (20, 20))
+    shotcache.save("three", video, audio)
+    # room for two: the one used longest ago went
+    assert shotcache.load("one") is None
+    assert shotcache.load("two") is not None and shotcache.load("three") is not None
+
+
+def test_stopped_shot_list_resumes_where_it_stopped(env, tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy import pipeline
+    from h3easy.nodes import H3EasyGenerate
+
+    calls = []
+    original = pipeline._sample
+
+    def stop_at_third(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 3:
+            raise RuntimeError("stopped")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_sample", stop_at_third)
+    _shot_list_inputs(tmp_path)
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+    try:
+        with pytest.raises(RuntimeError, match="stopped"):
+            H3EasyGenerate.execute(**_shot_list_kwargs(env, progressive=False))
+        report = H3EasyGenerate.execute(**_shot_list_kwargs(env, progressive=False)).args[3]
+    finally:
+        folder_paths.set_input_directory(old)
+    # the two finished shots were kept; only the third was sampled the second time
+    assert len(calls) == 4
+    assert "镜头 1 沿用上次的结果" in report and "镜头 2 沿用上次的结果" in report and "镜头 3 采样完成" in report

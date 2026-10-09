@@ -5,6 +5,8 @@ import { api } from "../../scripts/api.js";
 // hidden combo widgets, so saving, loading and queueing work as usual.
 // The panel follows the mode of the connected "H3 一键生成" and only shows
 // what that mode uses: filled items plus one "add" card until the H3 limit.
+// When that node's prompt is a director shot list, the panel lists the files
+// the list names instead and says which ones are still missing.
 const LOADER = "H3EasyMediaLoader";
 const GENERATOR = "H3EasyGenerate";
 const MODE_IMAGE = "图文模式（文生 / 首尾帧）";
@@ -23,8 +25,9 @@ const ACCEPT = {
     image: "image/*,.png,.jpg,.jpeg,.webp,.bmp",
     audio: "audio/*,video/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.mp4,.mov",
     video: "video/*,.mp4,.mov,.webm,.mkv,.avi",
+    any: "image/*,audio/*,video/*",
 };
-const DROP_KINDS = { image: ["image"], audio: ["audio", "video"], video: ["video"] };
+const DROP_KINDS = { image: ["image"], audio: ["audio", "video"], video: ["video"], any: ["image", "audio", "video"] };
 
 const STYLE = `
 .h3e-panel{box-sizing:border-box;width:100%;max-width:100%;overflow:hidden;font:12px/1.4 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--input-text,#ddd);user-select:none}
@@ -33,6 +36,15 @@ const STYLE = `
 .h3e-pill{flex-shrink:0;white-space:nowrap;padding:1px 8px;border-radius:10px;background:#2b5a8a;color:#fff;font-weight:600}
 .h3e-pill.h3e-ref{background:#6b3f8a}
 .h3e-pill.h3e-all{background:#555}
+.h3e-pill.h3e-sheet{background:#2f7a55}
+.h3e-file{display:flex;align-items:center;gap:6px;min-width:0;cursor:pointer;border-radius:6px;padding:2px 4px;border:1px dashed transparent}
+.h3e-chip.h3e-ok{background:rgba(127,209,127,.2);color:#7fd17f}
+.h3e-chip.h3e-miss{background:rgba(240,179,90,.2);color:#f0b35a}
+.h3e-file:hover,.h3e-file.h3e-over{border-color:#4a9eff;background:rgba(74,158,255,.08)}
+.h3e-ai{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;color:var(--descrip-text,#999)}
+.h3e-use{position:absolute;right:4px;top:4px;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;max-width:calc(100% - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h3e-missing{border-color:#f0b35a;color:#f0b35a}
+.h3e-shot{display:flex;align-items:center;gap:6px;min-width:0}
 .h3e-section{display:flex;flex-direction:column;gap:6px;min-width:0}
 .h3e-head{display:flex;align-items:baseline;gap:8px}
 .h3e-title{font-weight:600;font-size:13px;white-space:nowrap;flex-shrink:0}
@@ -156,9 +168,11 @@ function formatSeconds(seconds) {
     return seconds >= 60 ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}` : `${seconds.toFixed(1)}s`;
 }
 
-async function upload(file) {
+// ``overwrite`` keeps the file name when one with that name is already there
+async function upload(file, overwrite = false) {
     const body = new FormData();
     body.append("image", file);
+    if (overwrite) body.append("overwrite", "true");
     const response = await api.fetchApi("/upload/image", { method: "POST", body });
     if (response.status !== 200) throw new Error(`${response.status} ${response.statusText}`);
     const data = await response.json();
@@ -179,6 +193,94 @@ function pickFiles(kind, multiple) {
         document.body.appendChild(input);
         input.click();
     });
+}
+
+// A director shot list pasted as the prompt starts its cards with a "SHOT 01" line. The
+// backend reads it and says which input file stands behind each reference.
+const SHEET = /^[\s#>*_-]*SHOT\s*\d+\s*(?:[*_:：（(].*)?$/im;
+const SHEETS = new Map();  // prompt text -> what /h3easy/shot_list said (a Promise while loading)
+
+// undefined: an ordinary prompt; null: still loading; otherwise {shots, problems}
+function readSheet(text, onReady) {
+    if (!SHEET.test(text)) return undefined;
+    if (!SHEETS.has(text)) {
+        if (SHEETS.size > 8) SHEETS.clear();
+        const pending = api.fetchApi("/h3easy/shot_list", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+        })
+            .then((r) => (r.ok ? r.json() : { shots: [], problems: [] }))
+            .catch(() => ({ shots: [], problems: [] }))
+            .then((info) => {
+                if (SHEETS.get(text) === pending) SHEETS.set(text, info);
+                return info;
+            });
+        SHEETS.set(text, pending);
+    }
+    const info = SHEETS.get(text);
+    if (info instanceof Promise) {
+        info.then(onReady);
+        return null;
+    }
+    return info.shots.length ? info : undefined;
+}
+
+const isSheetFile = (file) => /\.(md|markdown|txt)$/i.test(file.name);
+const MEDIA_EXT = /\.(png|jpe?g|webp|bmp|gif|wav|mp3|flac|ogg|m4a|aac|mp4|mov|webm|mkv|avi)$/i;
+const promptLinked = (generator) => generator.inputs?.find((i) => i.name === "prompt")?.link != null;
+
+// What a user hands to any chat AI to get a shot list back: the single-file NB-H3-Director rules
+// (shot_list_template.md, kept word for word) plus a closing note that this plugin reads the reply.
+// Loaded up front so the copy button can write to the clipboard right inside the click.
+const AI_TEMPLATE_NOTE = `
+
+---
+
+## 我的出片环境（请照这个来）
+
+我用的是 ComfyUI-H3-Easy 插件，它会直接读取你输出的清单。所以：
+
+- 不管是一个镜头还是多个镜头，都按第 16 节的镜头卡格式输出：每张卡都要有「接上一镜:」，References 每行用反引号写文件名。
+- 清单开头写一行「**画幅：** 9:16」。我另说了画幅就按我说的。
+- 整份清单直接输出，不要把整份清单放进代码框；只有每张卡的 H3 Prompt 放在 text 代码框里。
+- 我没说文件名时，你给每张图起一个文件名（例如「沈砚.png」），并在清单开头列出每个文件名对应的是什么。
+
+读完以上全部规则后，先只回一句「规则收到，把参考图和剧情发给我」。
+`;
+let aiTemplate = "";
+fetch(new URL("./shot_list_template.md", import.meta.url)).then((r) => (r.ok ? r.text() : "")).then((text) => {
+    aiTemplate = text;
+}).catch(() => {});
+
+function setPrompt(generator, text) {
+    const widget = findWidget(generator, "prompt");
+    widget.value = text;
+    widget.callback?.(text);
+    writeTakes(generator, new Map());  // another list starts from its first takes
+    generator.setDirtyCanvas?.(true, true);
+}
+
+// Which take each shot of a list is on, kept in the generator's "镜头版本" widget as "3:2,5:1"
+// (a shot that is not named is on its first take). A shot whose take changes is generated again.
+function readTakes(generator) {
+    const takes = new Map();
+    const text = String(findWidget(generator, "shot_versions")?.value || "");
+    for (const [, number, take] of text.matchAll(/(\d+)\s*[:：]\s*(\d+)/g)) takes.set(Number(number), Number(take));
+    return takes;
+}
+
+function writeTakes(generator, takes) {
+    const widget = findWidget(generator, "shot_versions");
+    if (!widget) return false;
+    const text = [...takes].filter(([, take]) => take > 1).sort((a, b) => a[0] - b[0])
+        .map(([number, take]) => `${number}:${take}`).join(",");
+    if (widget.value !== text) {
+        widget.value = text;
+        widget.callback?.(text);
+        generator.setDirtyCanvas?.(true, true);
+    }
+    return true;
 }
 
 // duration / soundtrack info from the plugin's /h3easy/media_info route
@@ -304,6 +406,13 @@ class MediaPanel {
                 e.stopPropagation();
             });
         }
+        this.root.addEventListener("drop", (e) => {
+            const files = Array.from(e.dataTransfer?.files || []);
+            const sheet = files.find(isSheetFile);
+            if (sheet) this.takeSheet(sheet);
+            // cards and list rows take the files dropped on them themselves
+            if ((sheet || this.sheetShown) && !e.target.closest?.(".h3e-card, .h3e-file")) this.addSheetFiles(files);
+        });
     }
 
     // ---------- state helpers ----------
@@ -321,17 +430,247 @@ class MediaPanel {
         return findWidget(generators[0], "mode")?.value === MODE_REFERENCE ? "reference" : "image";
     }
 
-    async uploadAll(files) {
+    async uploadAll(files, overwrite = false) {
         const names = [];
         for (const file of files) {
             try {
-                names.push(await upload(file));
+                names.push(await upload(file, overwrite));
             } catch (error) {
                 console.error("[H3 Easy] upload failed", error);
                 alert(`上传失败：${file.name}\n${error.message ?? error}`);
             }
         }
         return names;
+    }
+
+    // ---------- director shot list ----------
+    sheet() {
+        const generator = linkedGenerators(this.node)[0];
+        const text = generator && !promptLinked(generator) && findWidget(generator, "prompt")?.value;
+        return typeof text === "string" ? readSheet(text, () => this.renderSoon()) : undefined;
+    }
+
+    // a shot list file dropped on the panel becomes the generator's prompt
+    async takeSheet(file) {
+        const generator = linkedGenerators(this.node)[0];
+        if (!generator || promptLinked(generator)) {
+            this.toast(generator ? "提示词是连线进来的，清单要放到连过来的那个节点里" : "先把「素材」连到「H3 一键生成」", 3000);
+            return;
+        }
+        setPrompt(generator, await file.text());
+        this.render();
+    }
+
+    // files for a shot list only need to be in the input folder; a redone file replaces the old one
+    async addSheetFiles(files) {
+        const media = files.filter((file) => kindOf(file) !== "other");
+        if (!media.length) return;
+        await this.uploadAll(media, true);
+        SHEETS.clear();
+        this.render();
+    }
+
+    // a file given to one row of the list is stored under the name the list asks for
+    async bindSheetFile(wanted, file) {
+        if (!file) return;
+        const stem = wanted.split(/[\\/]/).pop().replace(MEDIA_EXT, "");
+        const extension = (file.name.match(/\.[^.]+$/) || [""])[0];
+        await this.uploadAll([new File([file], stem + extension, { type: file.type })], true);
+        SHEETS.clear();
+        this.render();
+    }
+
+    // one row per shot, with a button to generate that shot again
+    shotsSection(info) {
+        const takes = readTakes(linkedGenerators(this.node)[0]);
+        const section = this.section("镜头", "不满意哪个就点「重抽」再运行，只重新生成它");
+        info.shots.forEach((shot, index) => {
+            const take = takes.get(shot.number) || 1;
+            const line = el("div", "h3e-shot");
+            const join = index === 0 ? "开头" : shot.continues ? "续写" : "硬切";
+            line.append(el("span", "h3e-name", `镜头 ${shot.number} · ${shot.seconds ?? "?"} 秒 · ${join}`));
+            if (take > 1) {
+                const back = el("button", "h3e-fit", "上一版");
+                back.title = "回到上一版。生成过的版本都留着，不用重新生成";
+                back.addEventListener("click", () => this.setTakes(info, new Map([[shot.number, take - 1]])));
+                line.append(el("span", "h3e-chip", `第 ${take} 版`), back);
+            }
+            const again = el("button", "h3e-fit", "重抽");
+            again.title = "换一个随机种子重新生成这个镜头，别的镜头不动";
+            again.addEventListener("click", () => this.setTakes(info, new Map([[shot.number, take + 1]])));
+            line.append(again);
+            section.append(line);
+        });
+        const all = el("button", "h3e-fit", "全部重抽");
+        all.title = "每个镜头都换一个随机种子。换了模型、文本编码器或 VAE 想整份重新生成时也点这个";
+        all.addEventListener("click", () => this.setTakes(info,
+            new Map(info.shots.map((shot) => [shot.number, (takes.get(shot.number) || 1) + 1]))));
+        const row = el("div", "h3e-shot");
+        row.append(all);
+        section.append(row);
+        return section;
+    }
+
+    setTakes(info, changed) {
+        const generator = linkedGenerators(this.node)[0];
+        const takes = readTakes(generator);
+        for (const [number, take] of changed) takes.set(number, take);
+        if (!writeTakes(generator, takes)) {
+            this.toast("「H3 一键生成」上没有「镜头版本」这一项：重启 ComfyUI 并重新放一个节点", 5000);
+            return;
+        }
+        this.render();
+        if (changed.size > 1) {
+            this.toast("所有镜头都换了新版本，点运行全部重新生成", 4000);
+            return;
+        }
+        const [number, take] = [...changed][0];
+        // a shot that continues this one starts from its last frames, so it is redone as well
+        const tail = [];
+        for (let i = info.shots.findIndex((shot) => shot.number === number) + 1; i < info.shots.length && info.shots[i].continues; i++) {
+            tail.push(info.shots[i].number);
+        }
+        this.toast(`镜头 ${number} 换到第 ${take} 版，点运行只重新生成它`
+            + (tail.length ? `和接着它续写的镜头 ${tail.join("、")}` : ""), 5000);
+    }
+
+    // click or drop on one of the list's files to supply it
+    bindable(target, row) {
+        const kind = row.kind === "picture" ? "image" : row.kind;
+        target.title = (row.found ? `${row.wanted}\n用的是 input/${row.found}` : `${row.wanted}\ninput 文件夹里没有这个文件`)
+            + "\n点击选文件，或把文件拖到这里：会按这个名字存进去";
+        target.addEventListener("click", async () => this.bindSheetFile(row.wanted, (await pickFiles(kind, false))[0]));
+        this.dropTarget(target, kind, (files) => this.bindSheetFile(row.wanted, files[0]));
+    }
+
+    sheetCard(row, ratio) {
+        const card = el("div", `h3e-card ${row.found ? "h3e-filled" : "h3e-missing"}`);
+        card.style.aspectRatio = String(ratio);
+        if (row.found) {
+            const media = el(row.kind === "video" ? "video" : "img");
+            if (row.kind === "video") {
+                media.muted = true;
+                media.preload = "metadata";
+            }
+            media.src = viewUrl(row.found);
+            card.append(media);
+        } else {
+            const empty = el("div", "h3e-empty");
+            empty.append(el("div", "h3e-plus", "缺"), el("div", "", "点击选择，或拖到这里"));
+            card.append(empty);
+        }
+        card.append(el("span", "h3e-badge", row.wanted), el("span", "h3e-use", `镜头 ${row.shots.join("、")}`));
+        this.bindable(card, row);
+        return card;
+    }
+
+    // "can't write prompts": hand the director rules to a chat AI, paste its shot list back
+    aiRow() {
+        const row = el("div", "h3e-ai");
+        const template = () => {
+            if (!aiTemplate) this.toast("模板没读到，刷新页面再试", 3000);
+            return aiTemplate && aiTemplate + AI_TEMPLATE_NOTE;
+        };
+        const copy = el("button", "h3e-fit", "复制 AI 模板");
+        copy.title = "把导演规则复制下来，粘贴给豆包、DeepSeek、Kimi、ChatGPT 等任意 AI，再把参考图和剧情发给它";
+        copy.addEventListener("click", () => {
+            const text = template();
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(
+                () => this.toast("已复制。粘贴给任意 AI，再发参考图和剧情；它嫌太长就点「下载模板」发文件", 6000),
+                () => this.toast("浏览器不让复制，点「下载模板」把文件发给 AI", 5000));
+        });
+        const save = el("button", "h3e-fit", "下载模板");
+        save.title = "模板有六万多字，有的 AI 不让粘贴这么长：下载成文件，把文件发给它";
+        save.addEventListener("click", () => {
+            const text = template();
+            if (!text) return;
+            const link = el("a");
+            link.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+            link.download = "H3导演模板.md";
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            this.toast("已下载 H3导演模板.md。把这个文件发给 AI，再发参考图和剧情", 6000);
+        });
+        const paste = el("button", "h3e-fit", "粘贴清单");
+        paste.title = "把 AI 回的出片清单复制好，点这里填进「H3 一键生成」的提示词";
+        paste.addEventListener("click", async () => {
+            const generator = linkedGenerators(this.node)[0];
+            if (!generator || promptLinked(generator)) {
+                this.toast(generator ? "提示词是连线进来的，清单要放到连过来的那个节点里" : "先把「素材」连到「H3 一键生成」", 3000);
+                return;
+            }
+            let text;
+            try {
+                text = await navigator.clipboard.readText();
+            } catch {
+                this.toast("浏览器不让读剪贴板：点一下提示词框，按 Ctrl+V 粘贴", 5000);
+                return;
+            }
+            if (!SHEET.test(text)) {
+                this.toast("剪贴板里不是出片清单（要有 SHOT 01 这样的镜头卡）", 4000);
+                return;
+            }
+            setPrompt(generator, text);
+            this.render();
+        });
+        row.append(el("span", "", "不会写提示词："), copy, save, paste);
+        return row;
+    }
+
+    renderSheet(info) {
+        const inner = this.inner;
+        inner.replaceChildren();
+        const bar = el("div", "h3e-modebar");
+        bar.append(el("span", "h3e-pill h3e-sheet", "出片清单"));
+        inner.append(bar);
+        if (info) {
+            const rows = new Map();  // one row per file the list names, however many shots use it
+            for (const shot of info.shots) {
+                for (const file of shot.files) {
+                    const kind = file.tag.slice(1, file.tag.indexOf(" ")).toLowerCase();
+                    const key = `${kind}/${file.wanted}`;
+                    if (!rows.has(key)) rows.set(key, { ...file, kind, shots: [] });
+                    rows.get(key).shots.push(shot.number);
+                }
+            }
+            const missing = [...rows.values()].filter((row) => !row.found).length;
+            bar.append(el("span", "", `${info.shots.length} 个镜头，素材 ${rows.size - missing}/${rows.size}`
+                + (missing ? "，把缺的拖到面板上" : "，可以运行")));
+            for (const problem of info.problems) inner.append(el("div", "h3e-aspect h3e-bad", problem));
+            const section = this.section("清单里的素材", "名字对不上，就把文件拖到那张卡片上");
+            // pictures and videos as cards, like the ordinary panel; audio as rows
+            const visual = [...rows.values()].filter((row) => row.kind !== "audio");
+            const ratio = cellRatio(visual.map((row) => row.found
+                && ratioOf(mediaSize(row.found, row.kind === "video" ? "video" : "image", () => this.renderSoon()))), 1);
+            if (visual.length) section.append(grid(visual.length <= 4 ? 2 : 3, visual.map((row) => this.sheetCard(row, ratio))));
+            for (const row of rows.values()) {
+                if (row.kind !== "audio") continue;
+                const line = el("div", "h3e-file");
+                this.bindable(line, row);
+                line.append(el("span", `h3e-chip ${row.found ? "h3e-ok" : "h3e-miss"}`, row.found ? "✓" : "缺"),
+                    el("span", "h3e-name", `🎵 ${row.wanted}`), el("span", "h3e-hint", `镜头 ${row.shots.join("、")}`));
+                section.append(line);
+            }
+            section.append(this.addCard("any", "把图、音频、视频拖到面板上，或点这里选（可多选）", "h3e-add-row", true,
+                (files) => this.addSheetFiles(files)));
+            inner.append(section, this.shotsSection(info));
+            const own = ALL_SLOTS.filter((name) => getValue(this.node, name)).length;
+            if (own) inner.append(el("div", "h3e-note", `面板里原来放的 ${own} 个素材不参与出片清单，提示词换回普通写法后恢复显示`));
+        } else {
+            bar.append(el("span", "", "正在读取…"));
+        }
+        inner.append(this.aiRow());
+        const foot = el("div", "h3e-foot");
+        const clear = el("button", "h3e-btn", "清空清单");
+        clear.title = "清空提示词里的出片清单，面板回到普通模式";
+        clear.addEventListener("click", () => {
+            setPrompt(linkedGenerators(this.node)[0], "");
+            this.render();
+        });
+        foot.append(this.toastEl, clear);
+        inner.append(foot);
+        this.fit();
     }
 
     async setSingle(slot, files) {
@@ -891,6 +1230,12 @@ class MediaPanel {
 
     render() {
         this.syncWidth();
+        const sheet = this.sheet();
+        this.sheetShown = sheet !== undefined;
+        if (this.sheetShown) {
+            this.renderSheet(sheet);
+            return;
+        }
         const mode = this.mode();
         const inner = this.inner;
         inner.replaceChildren();
@@ -916,6 +1261,7 @@ class MediaPanel {
             if (note) inner.append(el("div", "h3e-note", note));
         }
 
+        if (mode) inner.append(this.aiRow());
         const foot = el("div", "h3e-foot");
         const clear = el("button", "h3e-btn", "清空全部");
         clear.addEventListener("click", () => {
@@ -992,20 +1338,72 @@ function refreshLoaders(generator) {
     for (const loader of loadersFeeding(generator)) loader.__h3ePanel.render();
 }
 
+// the prompt changes on every keystroke: wait for a pause
+function refreshLoadersSoon(generator) {
+    clearTimeout(generator.__h3eRefresh);
+    generator.__h3eRefresh = setTimeout(() => refreshLoaders(generator), 300);
+}
+
+// Which generator a text file dropped on the page is meant for: the one it was dropped on
+// (its prompt box, its node in either renderer), else the only one in the graph.
+function generatorAt(e) {
+    const generators = (app.graph?._nodes || []).filter((node) => (node.comfyClass || node.type) === GENERATOR
+        && !promptLinked(node));
+    const target = e.target;
+    const boxed = generators.find((node) => {
+        const widget = findWidget(node, "prompt");
+        return (widget?.element ?? widget?.inputEl)?.contains?.(target);
+    });
+    if (boxed) return { generator: boxed, direct: true };
+    const id = target.closest?.("[data-node-id]")?.dataset.nodeId;
+    let under = id != null && generators.find((node) => String(node.id) === id);
+    if (!under && target === app.canvas?.canvas) {
+        const [x, y] = app.canvas.convertEventToCanvasOffset(e);
+        under = generators.find((node) => node === app.graph.getNodeOnPos(x, y));
+    }
+    if (under) return { generator: under, direct: true };
+    return generators.length === 1 ? { generator: generators[0], direct: false } : null;
+}
+
+// A shot list file (.md / .txt) dropped anywhere on the page goes into the generator's prompt.
+// ComfyUI itself can only answer such a file with "no workflow found". Panels take their own drops.
+document.addEventListener("dragover", (e) => {
+    if (e.dataTransfer?.types?.includes("Files") && !e.target.closest?.(".h3e-panel") && generatorAt(e)) e.preventDefault();
+}, true);
+document.addEventListener("drop", (e) => {
+    const sheet = Array.from(e.dataTransfer?.files || []).find(isSheetFile);
+    if (!sheet || e.target.closest?.(".h3e-panel")) return;
+    const found = generatorAt(e);
+    if (!found) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    sheet.text().then((text) => {
+        // away from the node, only a real shot list is taken: a stray text file must not wipe the prompt
+        if (!found.direct && !SHEET.test(text)) {
+            app.extensionManager?.toast?.add({ severity: "warn", summary: "H3 Easy", life: 6000,
+                detail: `${sheet.name} 里没有读到出片清单（要有 SHOT 01 这样的镜头卡）。想把它当普通提示词用，就拖到「H3 一键生成」节点上。` });
+            return;
+        }
+        setPrompt(found.generator, text);
+        refreshLoaders(found.generator);
+    });
+}, true);
+
 app.registerExtension({
     name: "H3Easy.MediaLoader",
     nodeCreated(node) {
         const type = node.comfyClass || node.type;
         if (type === GENERATOR && !node.__h3eWatch) {
-            // re-render the connected panel when the mode or the media link changes
+            // re-render the connected panel when the mode, the prompt or the media link changes
             node.__h3eWatch = true;
-            for (const name of ["mode", "width", "height"]) {
+            for (const name of ["mode", "width", "height", "prompt"]) {
                 const widget = findWidget(node, name);
                 if (!widget) continue;
                 const callback = widget.callback;
                 widget.callback = function (...args) {
                     const result = callback?.apply(this, args);
-                    queueMicrotask(() => refreshLoaders(node));
+                    if (name === "prompt") refreshLoadersSoon(node);
+                    else queueMicrotask(() => refreshLoaders(node));
                     return result;
                 };
             }

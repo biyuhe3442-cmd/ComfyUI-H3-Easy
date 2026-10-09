@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from fractions import Fraction
 
 import comfy.samplers
@@ -10,8 +11,9 @@ import folder_paths
 from comfy_api.latest import InputImpl, Types, io
 
 from . import media as media_io
+from . import shotlist
 from .media import AUDIO_SLOTS, NONE, REF_SLOTS, VIDEO_SLOTS, Media
-from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run
+from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run, run_shot_list
 
 CATEGORY = "H3 Easy"
 MediaType = io.Custom("H3_EASY_MEDIA")
@@ -103,11 +105,14 @@ class H3EasyGenerate(io.ComfyNode):
             description=(
                 "MiniMax H3 音视频一键生成：图文模式（文生 / 首尾帧，可锁定音频）或参考模式（多图 / 视频参考）。"
                 "支持多段续写长视频、第 1 段渐进加速和 TST 防闪烁，直接输出带声音的视频。"
+                "把 NB-H3-Director 的出片清单整份贴进提示词，就按清单逐个镜头生成。"
             ),
             inputs=[
                 io.Combo.Input("mode", options=[MODE_IMAGE, MODE_REFERENCE], default=MODE_IMAGE, display_name="模式"),
                 io.String.Input("prompt", multiline=True, default="", display_name="提示词",
-                                tooltip="多段时可用时间轴写法：[0-6s] 换行写第 1 段，[6-10s] 换行写第 2 段……；"
+                                tooltip="出片清单：把 NB-H3-Director 的出片清单整份贴进来（或把 .md 文件拖到节点上），"
+                                        "每个镜头的时长、模式、素材都按清单来，素材按文件名在 input 文件夹里找。"
+                                        "自己写提示词时，多段可用时间轴写法：[0-6s] 换行写第 1 段，[6-10s] 换行写第 2 段……；"
                                         "标题上面的文字放在每段开头，单独一行 [共用] 下面的文字放在每段结尾；"
                                         "或用单独一行 --- 分隔每段；不分段则所有段共用。参考模式用 <Picture 1> 指代参考图1，"
                                         "每段只会收到它提示词里提到的参考素材（编号自动重排）。"
@@ -171,41 +176,72 @@ class H3EasyGenerate(io.ComfyNode):
                                  tooltip="实验功能：第 2 段起也先用小分辨率跑前面的高噪步，再放大跑完，段数多时明显更快。"
                                          "切到全分辨率时会把接上一段的那 39 帧原样换回去，但接缝处可能有轻微不连贯，"
                                          "效果不满意就关掉。分辨率和步数分配跟「渐进加速」相同。"),
+                io.String.Input("shot_versions", default="", display_name="镜头版本", advanced=True,
+                                tooltip="出片清单用，由素材面板上每个镜头的「重抽」按钮填写。例如 3:2 表示镜头 3 用第 2 版，"
+                                        "没写的镜头是第 1 版。只有版本变了的镜头会重新生成。"),
             ],
             outputs=[
                 io.Video.Output(display_name="视频"),
                 io.Image.Output(display_name="画面"),
                 io.Audio.Output(display_name="音频"),
                 io.String.Output(display_name="报告"),
+                io.Video.Output(display_name="分镜头", is_output_list=True,
+                                tooltip="出片清单里每个镜头单独一段视频，接一个「保存视频」就一个镜头存一个文件。"
+                                        "不是出片清单时只有整条视频这一段。"),
             ],
         )
 
     @classmethod
-    def check_lazy_status(cls, mode, **kwargs):
-        # Only ask for the model this mode uses, and only when something is linked to it: an
+    def fingerprint_inputs(cls, prompt=None, **kwargs):
+        # a shot list reads its media from the input folder by name: run again when a file changes
+        found = media_io.find_shot_files(shotlist.parse(prompt)) if isinstance(prompt, str) else []
+        return media_io.file_signature([name for names in found for group in names.values() for name in group])
+
+    @classmethod
+    def check_lazy_status(cls, mode, prompt=None, **kwargs):
+        # Only ask for the models this run uses, and only when something is linked to them: an
         # unlinked input (or one whose loader is muted / bypassed) is absent from kwargs, and
         # asking for it makes ComfyUI fail with "needs input ... but there is no input".
         # execute() then explains what is missing instead.
-        name = "reference_model" if mode == MODE_REFERENCE else "image_model"
-        return [name] if name in kwargs and kwargs[name] is None else []
+        modes = {card.mode for card in shotlist.parse(prompt)} or {
+            shotlist.REFERENCE if mode == MODE_REFERENCE else shotlist.IMAGE}
+        names = [name for name, used in (("image_model", shotlist.IMAGE), ("reference_model", shotlist.REFERENCE))
+                 if used in modes]
+        return [name for name in names if name in kwargs and kwargs[name] is None]
 
     @classmethod
     def execute(cls, mode, prompt, clip, video_vae, audio_vae, segments, segment_seconds, width, height,
                 steps, seed, lock_audio, progressive, tst, low_vram, sampler_name="res_multistep",
                 scheduler="simple", progressive_scale=0.7, progressive_switch=0.35, upscale_method=UPSCALE_PIXEL,
-                tst_strength=0.2, ref_image_size="match", progressive_continuation=False,
+                tst_strength=0.2, ref_image_size="match", progressive_continuation=False, shot_versions="",
                 image_model=None, reference_model=None, media=None,
                 learned_upscaler=None) -> io.NodeOutput:
-        model = reference_model if mode == MODE_REFERENCE else image_model
-        if model is None:
-            if mode == MODE_REFERENCE:
-                which, file = "参考模型(ref2va)", "minimax_h3_ref2va_*.safetensors"
-            else:
-                which, file = "图文模型(fl2va)", "minimax_h3_fl2va_*.safetensors"
-            raise ValueError(
-                f"现在是{mode}，但「H3 一键生成」的「{which}」输入没有收到模型。\n"
-                f"请把加载 {file} 的模型加载节点连到这个输入；如果已经连了，检查那个加载节点是不是被"
-                f"禁用（Ctrl+M）或绕过（Ctrl+B，节点变紫色）了。")
+        models = {True: reference_model, False: image_model}
+        cards = shotlist.parse(prompt)
+        if not cards and shotlist.looks_like_sheet(prompt):
+            # without this the whole list would be sent to H3 as one prompt
+            raise ValueError("提示词像是出片清单，但没有读到镜头卡。每张卡要以单独一行的 SHOT 01 开头，"
+                             "下面有 Duration:、Mode:、References:、H3 Prompt: 这几项，提示词放在 H3 Prompt: 下面的代码框里。")
+        needed = {}  # reference mode or not -> why this run needs that model
+        if cards:
+            found = shotlist.problems(cards)
+            if found:
+                raise ValueError("出片清单里有读不懂的地方：\n" + "\n".join(found))
+            for card in cards:
+                reference = card.mode == shotlist.REFERENCE
+                needed[reference] = f"出片清单里有{'参考' if reference else '首帧'}模式的镜头"
+        else:
+            needed[mode == MODE_REFERENCE] = f"现在是{mode}"
+        for reference, why in needed.items():
+            if models[reference] is None:
+                if reference:
+                    which, file = "参考模型(ref2va)", "minimax_h3_ref2va_*.safetensors"
+                else:
+                    which, file = "图文模型(fl2va)", "minimax_h3_fl2va_*.safetensors"
+                raise ValueError(
+                    f"{why}，但「H3 一键生成」的「{which}」输入没有收到模型。\n"
+                    f"请把加载 {file} 的模型加载节点连到这个输入；如果已经连了，检查那个加载节点是不是被"
+                    f"禁用（Ctrl+M）或绕过（Ctrl+B，节点变紫色）了。")
         if learned_upscaler is not None and not callable(getattr(learned_upscaler, "upscale_clean_video", None)):
             raise ValueError("学习式upscaler 输入不是 MiniMax H3 Latent Upscaler Provider")
         settings = Settings(
@@ -215,11 +251,24 @@ class H3EasyGenerate(io.ComfyNode):
             progressive_switch=progressive_switch, upscale_method=upscale_method,
             progressive_continuation=progressive_continuation, tst=tst,
             tst_strength=tst_strength, low_vram=low_vram, ref_image_size=ref_image_size,
+            shot_versions={int(number): int(version) for number, version in re.findall(r"(\d+)\s*[:：]\s*(\d+)", shot_versions)},
         )
-        result = run(settings, model, clip, video_vae, audio_vae, media, learned_upscaler)
-        video = InputImpl.VideoFromComponents(
-            Types.VideoComponents(images=result.images, audio=result.audio, frame_rate=Fraction(24)))
-        return io.NodeOutput(video, result.images, result.audio, result.report)
+        if cards:
+            result = run_shot_list(settings, models, clip, video_vae, audio_vae, cards,
+                                   media_io.load_shot_media(cards), learned_upscaler)
+        else:
+            result = run(settings, models[mode == MODE_REFERENCE], clip, video_vae, audio_vae, media,
+                         learned_upscaler)
+
+        def video(images, audio):
+            return InputImpl.VideoFromComponents(
+                Types.VideoComponents(images=images, audio=audio, frame_rate=Fraction(24)))
+
+        waveform, rate = result.audio["waveform"], result.audio["sample_rate"]
+        clips = [video(result.images[first:last],
+                       {"waveform": waveform[..., first * rate // 24:last * rate // 24], "sample_rate": rate})
+                 for first, last in result.clips]
+        return io.NodeOutput(video(result.images, result.audio), result.images, result.audio, result.report, clips)
 
 
 NODES = [H3EasyMediaLoader, H3EasyGenerate]

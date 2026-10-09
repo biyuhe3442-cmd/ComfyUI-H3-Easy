@@ -9,7 +9,22 @@ from aiohttp import web
 import folder_paths
 from server import PromptServer
 
-from .media import NONE, probe
+from . import shotlist
+from .media import NONE, SHOT_REFS, find_shot_files, probe
+
+
+@PromptServer.instance.routes.post("/h3easy/shot_list")
+async def shot_list(request):
+    """What a pasted shot list asks for, and which of its files are in the input folder."""
+    shots = shotlist.parse((await request.json()).get("text", ""))
+    found = find_shot_files(shots)
+    return web.json_response({
+        "problems": shotlist.problems(shots),
+        "shots": [{"number": shot.number, "seconds": shot.seconds, "continues": shot.continues,
+                   "files": [{"tag": ref.tag, "wanted": ref.file, "found": name}
+                             for group, _ in SHOT_REFS for ref, name in zip(getattr(shot, group), names[group])]}
+                  for shot, names in zip(shots, found)],
+    })
 
 
 @PromptServer.instance.routes.get("/h3easy/media_info")

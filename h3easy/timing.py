@@ -26,6 +26,7 @@ EXACT_AV_BASE = 39
 EXACT_AV_STEP = 51
 MIN_SEGMENT_FRAMES = 90
 MAX_SEGMENT_FRAMES = 345  # H3's trained range is roughly 124-362 frames
+MAX_SHOT_FRAMES = 362     # 17k+5 but not exact-AV: only for a shot with no continuation on either side
 # right-context tokens appended when decoding a segment (see decode.py)
 DECODE_CONTEXT_SLOTS = 5
 
@@ -93,17 +94,46 @@ class Segment:
         return self.start_frame / FPS, self.end_frame / FPS
 
 
+def _place(lengths: list[tuple[int, bool]]) -> list[Segment]:
+    """Lay (frames, continues the one before) out on the global timeline."""
+    segments: list[Segment] = []
+    for index, (frames, continues) in enumerate(lengths):
+        prefix = CONTEXT_FRAMES if continues else 0
+        start = segments[-1].end_frame - prefix if segments else 0
+        segments.append(Segment(index, start, frames, prefix))
+    return segments
+
+
 def plan_segments(count: int, seconds: float) -> list[Segment]:
     if count < 1:
         raise ValueError("at least one segment is required")
     requested = max(1, round(float(seconds) * FPS))
     first = exact_av_frames_near(requested)
     later = exact_av_frames_near(requested + CONTEXT_FRAMES)
-    segments = [Segment(0, 0, first, 0)]
-    for index in range(1, count):
-        prev = segments[-1]
-        segments.append(Segment(index, prev.end_frame - CONTEXT_FRAMES, later, CONTEXT_FRAMES))
-    return segments
+    return _place([(first, False)] + [(later, True)] * (count - 1))
+
+
+def frames_at_least(requested: int, exact_av: bool) -> int:
+    """Shortest H3 length that covers ``requested`` frames (the longest one when none does).
+
+    A shot on its own may use every 17k+5 length. Shots joined by continuation need the
+    exact-AV grid, whose steps are 2 s apart, so there a length up to 3 frames short counts.
+    """
+    if exact_av:
+        lengths, slack = range(MIN_SEGMENT_FRAMES, MAX_SEGMENT_FRAMES + 1, EXACT_AV_STEP), 3
+    else:
+        lengths, slack = range(MIN_SEGMENT_FRAMES, MAX_SHOT_FRAMES + 1, 17), 0
+    return next((frames for frames in lengths if frames >= requested - slack), lengths[-1])
+
+
+def plan_shots(shots: list[tuple[float, bool]]) -> list[Segment]:
+    """Segments for shot cards given as (seconds of new video, continues the shot before)."""
+    lengths = []
+    for index, (seconds, continues) in enumerate(shots):
+        chained = continues or (index + 1 < len(shots) and shots[index + 1][1])
+        requested = round(float(seconds) * FPS) + (CONTEXT_FRAMES if continues else 0)
+        lengths.append((frames_at_least(requested, chained), continues))
+    return _place(lengths)
 
 
 def total_frames(segments: list[Segment]) -> int:

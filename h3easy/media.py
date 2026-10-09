@@ -11,6 +11,7 @@ import torch
 
 import folder_paths
 
+from . import shotlist
 from .timing import FPS
 
 NONE = "无"
@@ -20,6 +21,8 @@ AUDIO_SLOTS = 3
 VIDEO_SLOTS = 3
 VIDEO_MAX_SECONDS = 15.0
 VIDEO_MAX_PIXELS = 640 * 640  # reference video tokens ride through every step; keep them light
+# a shot card's reference groups and the kinds of file each one accepts
+SHOT_REFS = (("pictures", ["image"]), ("videos", ["video"]), ("audios", ["audio", "video"]))
 
 
 @dataclass
@@ -30,6 +33,8 @@ class Media:
     audios: list[dict] = field(default_factory=list)              # standalone audio files
     videos: list[torch.Tensor] = field(default_factory=list)      # 24 fps frames [F, H, W, 3]
     video_audios: list[dict | None] = field(default_factory=list)  # soundtrack of each video (or None)
+    files: list[str] = field(default_factory=list)                # shot cards: input files used, for the report
+    stamp: str = ""                                               # shot cards: those files' names and change times
 
     @property
     def lock_source(self) -> dict | None:
@@ -132,6 +137,73 @@ def file_signature(names: list[str]) -> str:
         else:
             parts.append(NONE)
     return "|".join(parts)
+
+
+def input_files() -> list[str]:
+    """Every file in the input folder, subfolders included, as names the loaders above accept."""
+    root = folder_paths.get_input_directory()
+    out = []
+    for folder, _, names in os.walk(root):
+        inside = os.path.relpath(folder, root).replace(os.sep, "/")
+        out += [name if inside == "." else f"{inside}/{name}" for name in names]
+    return out
+
+
+def find_input(wanted: str, kinds: list[str], files: list[str]) -> str | None:
+    """The input file a shot card means: the same file name, else the same name without extension.
+
+    Several matches: the one nearest the top of the input folder, then the newest.
+    """
+    wanted = wanted.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    candidates = folder_paths.filter_files_content_types(files, kinds)
+    matches = [name for name in candidates if name.rsplit("/", 1)[-1].casefold() == wanted]
+    if not matches:
+        stem = os.path.splitext(wanted)[0]
+        matches = [name for name in candidates if os.path.splitext(name.rsplit("/", 1)[-1])[0].casefold() == stem]
+    if len(matches) > 1:
+        root = folder_paths.get_input_directory()
+        matches.sort(key=lambda name: (name.count("/"), -os.path.getmtime(os.path.join(root, name))))
+    return matches[0] if matches else None
+
+
+def find_shot_files(shots: list[shotlist.Shot]) -> list[dict[str, list[str | None]]]:
+    """For each shot card, the input file behind every reference (None when nothing matches)."""
+    files = input_files() if shots else []
+    return [{group: [find_input(ref.file, kinds, files) for ref in getattr(shot, group)]
+             for group, kinds in SHOT_REFS} for shot in shots]
+
+
+def load_shot_media(shots: list[shotlist.Shot]) -> list[Media]:
+    """What each shot card hands to H3, in the card's own order."""
+    found = find_shot_files(shots)
+    missing = [f"镜头 {shot.number} 的 {ref.tag}：{ref.file}"
+               for shot, names in zip(shots, found) for group, _ in SHOT_REFS
+               for ref, name in zip(getattr(shot, group), names[group]) if name is None]
+    if missing:
+        raise ValueError("出片清单里有素材没找到。请把这些文件放进 ComfyUI 的 input 文件夹（可以带子文件夹），"
+                         "或拖进素材面板：\n" + "\n".join(missing))
+    loaded: dict = {}
+
+    def load(reader, name):
+        if (reader, name) not in loaded:
+            loaded[reader, name] = reader(name)
+        return loaded[reader, name]
+
+    out = []
+    for shot, names in zip(shots, found):
+        media = Media(files=names["pictures"] + names["videos"] + names["audios"])
+        media.stamp = file_signature(media.files)
+        pictures = [load(load_image, name) for name in names["pictures"]]
+        if shot.mode == shotlist.IMAGE:  # fl2va: <Picture 1> is the first frame, <Picture 2> the last
+            media.first_frame = pictures[0] if pictures else None
+            media.last_frame = pictures[1] if len(pictures) > 1 else None
+        else:
+            media.ref_images = pictures
+            media.videos = [load(load_video_frames, name) for name in names["videos"]]
+            media.video_audios = [load(load_video_audio, name) for name in names["videos"]]
+            media.audios = [load(load_audio, name) for name in names["audios"]]
+        out.append(media)
+    return out
 
 
 def probe(path: str) -> dict:
