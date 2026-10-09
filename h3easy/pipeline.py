@@ -61,6 +61,9 @@ class Settings:
     low_vram: bool = True
     ref_image_size: str = "match"
     shot_versions: dict = field(default_factory=dict)  # shot list: shot number -> which take of it (1 = first)
+    # shot list: what the queued workflow feeds the node, under "image", "reference" (the two models)
+    # and "shared" (text encoder, VAEs, upscaler); stored shots are reused only while it stays the same
+    upstream: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -404,17 +407,15 @@ def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, 
     common = [settings.width, settings.height, settings.steps, settings.sampler_name, settings.scheduler,
               settings.progressive, settings.progressive_scale, settings.progressive_switch,
               settings.upscale_method, settings.progressive_continuation, settings.tst and settings.tst_strength,
-              settings.ref_image_size, type(learned_upscaler).__name__, shotcache.source(getattr(clip, "patcher", None))]
-    sources = {reference: [shotcache.source(model), float(getattr(model.get_model_object("model_sampling"), "shift", 0))]
-               for reference, model in models.items() if model is not None}
+              settings.ref_image_size, settings.upstream.get("shared")]
     shots, seeds, keys = [], [], []
     for card, media, seg in zip(cards, medias, segments):
         name = f"镜头 {card.number}"
         reference = card.mode == shotlist.REFERENCE
         # a shot keeps its seed from run to run; "re-roll" in the panel moves it to its next take
         seeds.append((card.number * 1_000_003 + settings.shot_versions.get(card.number, 1)) & 0xFFFFFFFFFFFFFFFF)
-        keys.append(shotcache.key(card.prompt, card.mode, seg.frames, media.stamp, seeds[-1], common, sources[reference],
-                                  keys[-1] if seg.prefix_frames else ""))
+        keys.append(shotcache.key(card.prompt, card.mode, seg.frames, media.stamp, seeds[-1], common,
+                                  settings.upstream.get(card.mode), keys[-1] if seg.prefix_frames else ""))
         a, b = seg.new_window_seconds
         join = "续写" if seg.prefix_frames else "硬切" if seg.index else "开头"
         report.add(f"  {name}：{a:.2f}–{b:.2f}s，{'参考模式' if reference else '首帧模式'}，{join}，"

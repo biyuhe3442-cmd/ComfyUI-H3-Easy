@@ -764,7 +764,7 @@ def test_shot_store_round_trip_and_pruning(monkeypatch):
     from h3easy import shotcache
 
     assert shotcache.key("a", 1, [2.0]) == shotcache.key("a", 1, [2.0]) != shotcache.key("a", 1, [2.5])
-    assert shotcache.source(None) == [] and shotcache.load(shotcache.key("nothing")) is None
+    assert shotcache.load(shotcache.key("nothing")) is None
     video, audio = torch.rand(1, 24, 7, 4, 6), torch.rand(1, 32, 2, 50)
     shotcache.save("one", video, audio)
     loaded = shotcache.load("one")
@@ -808,3 +808,64 @@ def test_stopped_shot_list_resumes_where_it_stopped(env, tmp_path, monkeypatch):
     # the two finished shots were kept; only the third was sampled the second time
     assert len(calls) == 4
     assert "镜头 1 沿用上次的结果" in report and "镜头 2 沿用上次的结果" in report and "镜头 3 采样完成" in report
+
+
+def test_shot_list_notices_changed_workflow_settings(env, tmp_path, monkeypatch):
+    """What sits upstream of a model in the workflow is part of what a shot depends on."""
+    import types
+
+    import folder_paths
+    from h3easy import pipeline
+    from h3easy.nodes import H3EasyGenerate, upstream
+
+    def graph(tau=1.3, image_file="fl2va.safetensors", vae="video_vae.safetensors"):
+        return {
+            "4": {"class_type": "UNETLoader", "inputs": {"unet_name": "ref2va.safetensors"}},
+            "13": {"class_type": "LoraLoaderModelOnly",
+                   "inputs": {"model": ["4", 0], "lora_name": "turbo.safetensors", "strength_model": 0.75}},
+            "17": {"class_type": "BlockSparseAttention", "inputs": {"model": ["13", 0], "selection.tau": tau}},
+            "2": {"class_type": "UNETLoader", "inputs": {"unet_name": image_file}},
+            "6": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+            "9": {"class_type": "H3EasyGenerate",
+                  "inputs": {"reference_model": ["17", 0], "image_model": ["2", 0], "video_vae": ["6", 0],
+                             "prompt": "x", "steps": 6}},
+        }
+
+    # every node on the way, by class and settings; an input that is not linked gives nothing
+    loader = ["UNETLoader", {"unet_name": "ref2va.safetensors"}]
+    lora = ["LoraLoaderModelOnly", {"lora_name": "turbo.safetensors", "model": [loader, 0], "strength_model": 0.75}]
+    assert upstream(graph(), "9", ["reference_model"]) == [
+        [["BlockSparseAttention", {"model": [lora, 0], "selection.tau": 1.3}], 0]]
+    assert upstream(graph(), 9, ["clip", "learned_upscaler"]) == []
+
+    sampled = []
+    original = pipeline._sample
+
+    def spy(*args, **kwargs):
+        sampled.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_sample", spy)
+    _shot_list_inputs(tmp_path)
+    old = folder_paths.get_input_directory()
+    folder_paths.set_input_directory(str(tmp_path))
+
+    def run(**changes):
+        sampled.clear()
+        monkeypatch.setattr(H3EasyGenerate, "hidden", types.SimpleNamespace(prompt=graph(**changes), unique_id="9"))
+        H3EasyGenerate.execute(**_shot_list_kwargs(env, progressive=False))
+        return len(sampled)
+
+    try:
+        assert run() == 3
+        assert run() == 0
+        # a patch node on the reference model: the two reference shots, not the first-frame shot
+        assert run(tau=1.5) == 2
+        # another file for the image model: only the first-frame shot
+        assert run(tau=1.5, image_file="fl2va_other.safetensors") == 1
+        # a VAE is shared by every shot
+        assert run(tau=1.5, image_file="fl2va_other.safetensors", vae="other_vae.safetensors") == 3
+        # and going back to settings that were rendered before costs nothing
+        assert run() == 0
+    finally:
+        folder_paths.set_input_directory(old)

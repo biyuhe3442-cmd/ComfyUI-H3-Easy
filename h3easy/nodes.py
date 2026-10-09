@@ -9,6 +9,7 @@ from fractions import Fraction
 import comfy.samplers
 import folder_paths
 from comfy_api.latest import InputImpl, Types, io
+from comfy_execution.graph_utils import is_link
 
 from . import media as media_io
 from . import shotlist
@@ -93,6 +94,23 @@ class H3EasyMediaLoader(io.ComfyNode):
                 bundle.videos.append(media_io.load_video_frames(kwargs[name]))
                 bundle.video_audios.append(media_io.load_video_audio(kwargs[name]))
         return io.NodeOutput(bundle)
+
+
+def upstream(prompt: dict, node_id: str, names: list[str]) -> list:
+    """What feeds these inputs of a node, read from the queued workflow: every node on the way,
+    by class and settings. A changed loader file, LoRA strength or patch-node setting changes it."""
+    described: dict = {}
+
+    def describe(link):
+        source = str(link[0])
+        if source not in described:
+            node = prompt[source]
+            described[source] = [node["class_type"], {name: describe(value) if is_link(value) else value
+                                                      for name, value in sorted(node["inputs"].items())}]
+        return [described[source], link[1]]
+
+    inputs = prompt[str(node_id)]["inputs"]
+    return [describe(inputs[name]) for name in names if is_link(inputs.get(name))]
 
 
 class H3EasyGenerate(io.ComfyNode):
@@ -180,6 +198,7 @@ class H3EasyGenerate(io.ComfyNode):
                                 tooltip="出片清单用，由素材面板上每个镜头的「重抽」按钮填写。例如 3:2 表示镜头 3 用第 2 版，"
                                         "没写的镜头是第 1 版。只有版本变了的镜头会重新生成。"),
             ],
+            hidden=[io.Hidden.prompt, io.Hidden.unique_id],
             outputs=[
                 io.Video.Output(display_name="视频"),
                 io.Image.Output(display_name="画面"),
@@ -244,6 +263,12 @@ class H3EasyGenerate(io.ComfyNode):
                     f"禁用（Ctrl+M）或绕过（Ctrl+B，节点变紫色）了。")
         if learned_upscaler is not None and not callable(getattr(learned_upscaler, "upscale_clean_video", None)):
             raise ValueError("学习式upscaler 输入不是 MiniMax H3 Latent Upscaler Provider")
+        sources = {}
+        if cards and cls.hidden is not None and cls.hidden.prompt:
+            graph, me = cls.hidden.prompt, cls.hidden.unique_id
+            sources = {shotlist.IMAGE: upstream(graph, me, ["image_model"]),
+                       shotlist.REFERENCE: upstream(graph, me, ["reference_model"]),
+                       "shared": upstream(graph, me, ["clip", "video_vae", "audio_vae", "learned_upscaler"])}
         settings = Settings(
             mode=mode, prompt=prompt, segments=segments, segment_seconds=segment_seconds,
             width=width, height=height, steps=steps, sampler_name=sampler_name, scheduler=scheduler,
@@ -252,6 +277,7 @@ class H3EasyGenerate(io.ComfyNode):
             progressive_continuation=progressive_continuation, tst=tst,
             tst_strength=tst_strength, low_vram=low_vram, ref_image_size=ref_image_size,
             shot_versions={int(number): int(version) for number, version in re.findall(r"(\d+)\s*[:：]\s*(\d+)", shot_versions)},
+            upstream=sources,
         )
         if cards:
             result = run_shot_list(settings, models, clip, video_vae, audio_vae, cards,
