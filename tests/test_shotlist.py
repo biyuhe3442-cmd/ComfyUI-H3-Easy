@@ -213,3 +213,68 @@ def test_the_ai_template_shows_cards_this_parser_reads():
     assert shotlist.unlisted_tags(example) == []
     assert example.prompt.startswith("subject_definitions:") and example.prompt.endswith("N/A")
     assert len(example.prompt) < 7000
+
+
+ONE_BOX = """# 《账本》出片清单
+**画幅：** 9:16
+**我替你定的：** 无
+
+素材：
+`沈砚.png` 角色：沈砚
+`草屋.png` 场景：漏雨的草屋
+
+SHOT 01
+Duration: 6s
+Mode: Ref2VA
+References:
+<Picture 1> 沈砚 `沈砚.png`
+<Picture 2> 草屋 `草屋.png`
+接上一镜: 硬切
+导演意图：他翻开账本。
+H3 Prompt:
+subject_definitions:
+<Subject 1> is the young man in <Picture 1>.
+
+non_diegetic_music:
+N/A
+注意事项：无
+
+SHOT 02
+Duration: 6s
+Mode: Ref2VA
+References:
+<Picture 1> 沈砚 `沈砚.png`
+接上一镜: 续写
+导演意图：他抬头。
+H3 Prompt:
+subject_definitions:
+<Subject 1> is the young man in <Picture 1>.
+
+detailed_description:
+[Shot 1] The shot opens on the same medium shot.
+[Shot 2] At 00:03.600, the camera cuts to a close-up.
+
+non_diegetic_music:
+N/A
+注意事项：无"""
+
+
+def test_a_list_in_one_code_block_is_read_however_it_was_copied():
+    def check(text):
+        shots = shotlist.parse(text)
+        assert [(s.number, s.seconds, s.mode, s.continues) for s in shots] == [
+            (1, 6.0, shotlist.REFERENCE, False), (2, 6.0, shotlist.REFERENCE, True)], text[:40]
+        assert shotlist.problems(shots) == [] and shots[0].aspect == (9, 16)
+        assert [ref.file for ref in shots[0].pictures] == ["沈砚.png", "草屋.png"]
+        assert shots[0].prompt == ("subject_definitions:\n<Subject 1> is the young man in <Picture 1>.\n\n"
+                                   "non_diegetic_music:\nN/A")
+        # the cut marks of the official prompt format are not card headers
+        assert shots[1].prompt.endswith("N/A") and "[Shot 2] At 00:03.600" in shots[1].prompt
+
+    check(ONE_BOX)                                  # the code block's own copy button: no fence at all
+    check("```text\n" + ONE_BOX + "\n```")            # the whole reply copied
+    check("好的：\n\n```\n" + ONE_BOX + "\n```\n")
+    # prompts fenced inside an outer fence of the same length: wrong nesting, still read
+    nested = ONE_BOX.replace("H3 Prompt:\n", "H3 Prompt:\n```text\n").replace("\n注意事项：", "\n```\n注意事项：")
+    check("```markdown\n" + nested + "\n```")
+    check("```text\n" + nested + "\n```")

@@ -146,6 +146,16 @@ def _card(number: int, lines: list[str], sheet_aspect) -> Shot:
 def parse(text: str) -> list[Shot]:
     """The shot cards in ``text``; empty when it is an ordinary prompt."""
     lines = [line for line in (text or "").splitlines() if not _WRAPPER.match(line)]
+    strict = _read(lines)
+    if not any(_FENCE.match(line) for line in lines):
+        return strict
+    # A chat AI may put the whole list in one code block, or nest its code blocks wrongly. Read
+    # it once more with every fence line taken out and keep the cleaner reading (the first on a tie).
+    loose = _read([line for line in lines if not _FENCE.match(line)])
+    return min(strict, loose, key=lambda shots: (not shots, len(problems(shots)), -len(shots)))
+
+
+def _read(lines: list[str]) -> list[Shot]:
     cards: list[tuple[int, list[str]]] = []
     head: list[str] = []
     fence = None
