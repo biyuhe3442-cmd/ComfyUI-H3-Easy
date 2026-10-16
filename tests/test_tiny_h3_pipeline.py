@@ -646,6 +646,7 @@ def _shot_list_kwargs(env, **overrides):
 def test_shot_list_runs_each_card_with_its_own_media(env, tmp_path, monkeypatch):
     import folder_paths
     from comfy_extras import nodes_minimax_h3 as core_h3
+    from h3easy import shotlist
     from h3easy.nodes import H3EasyGenerate
     from h3easy.pipeline import MODE_IMAGE
 
@@ -676,10 +677,11 @@ def test_shot_list_runs_each_card_with_its_own_media(env, tmp_path, monkeypatch)
     finally:
         folder_paths.set_input_directory(old)
 
-    # each card got its own files, in its own order, with its prompt untouched
+    # each card got its own files, in its own order; a card with pictures ends with the no-sheet sentence
+    sheet = " Throughout the video, " + shotlist.NO_SHEET + "."
     assert calls == [
-        ("<Picture 1> walks onto <Picture 2>.", [(64, 64), (64, 128)], 0, 90),
-        ("<Picture 1> turns around and speaks in the voice of <Audio 1>.", [(128, 64)], 1, 90),
+        ("<Picture 1> walks onto <Picture 2>." + sheet, [(64, 64), (64, 128)], 0, 90),
+        ("<Picture 1> turns around and speaks in the voice of <Audio 1>." + sheet, [(128, 64)], 1, 90),
     ]
     # 3.75 s, then 51 new frames continuing it, then a cut to a 3.75 s first-frame shot; each shot is a
     # file of its own and the whole video is joined from them, so 画面 is only the first frame
@@ -1064,7 +1066,7 @@ def test_disk_shots_preserve_frames_audio_and_continuation(env, tmp_path, monkey
 def test_hard_cuts_receive_the_previous_last_frame_and_reroll_dependents(env, tmp_path, monkeypatch):
     import folder_paths
     from comfy_extras import nodes_minimax_h3 as core_h3
-    from h3easy import pipeline, video_output
+    from h3easy import pipeline, shotlist, video_output
     from h3easy.nodes import H3EasyGenerate
 
     monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
@@ -1090,7 +1092,8 @@ def test_hard_cuts_receive_the_previous_last_frame_and_reroll_dependents(env, tm
     files = [clip.get_stream_source() for clip in result[4]]
     # shots 1 and 4 (the same card) are encoded once, up front; 2 and 3 wait for the video before them
     assert [len(images) for _, images in calls] == [2, 3, 3]
-    assert calls[0][0] == "detailed_description:\n[Shot 1] The man listens without speaking."
+    assert calls[0][0] == ("detailed_description:\n[Shot 1] The man listens without speaking. Throughout the video, "
+                           + shotlist.NO_SHEET + ".")
     assert "<Picture 3>" in calls[1][0] and "preceding shot" in calls[1][0]
     torch.testing.assert_close(calls[1][1][-1], video_output.last_frame(files[0]))
     torch.testing.assert_close(calls[2][1][-1], video_output.last_frame(files[1]))

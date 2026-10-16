@@ -348,3 +348,13 @@ def test_a_list_copied_out_of_a_rich_text_view_is_cleaned():
     assert got[0].aspect == (16, 9)
     # an ordinary list keeps its blank lines and a literal backslash before a letter
     assert shotlist.parse(clean.replace("尹喜.png`", "尹喜.png` C:\\x"))[0].prompt == expected[0].prompt
+
+
+def test_reference_pictures_are_kept_out_of_the_video():
+    prompt = "detailed_description:\n[Shot 1] A man waits.\n\noverall_soundscape:\nRain."
+    added = shotlist.keep_references_out(prompt)
+    assert added == ("detailed_description:\n[Shot 1] A man waits. Throughout the video, " + shotlist.NO_SHEET
+                     + ".\n\noverall_soundscape:\nRain.")
+    assert shotlist.keep_references_out(added) == added
+    first_frame = "summary:\n[reference generation + keyframe completion] The shot begins from <Picture 2>."
+    assert shotlist.keep_references_out(first_frame) == first_frame

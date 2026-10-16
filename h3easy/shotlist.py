@@ -158,6 +158,19 @@ def add_visual_instructions(prompt: str, instructions: str) -> str:
     return instructions + "\n" + prompt
 
 
+NO_SHEET = "no reference image appears as it is: no plain studio backdrop and no multi-view character sheet"
+
+
+def keep_references_out(prompt: str) -> str:
+    """Without this sentence a character sheet tends to open the video; chat models often leave it out."""
+    if "keyframe completion" in prompt or NO_SHEET in prompt.lower():
+        return prompt
+    sentence = f"Throughout the video, {NO_SHEET}."
+    sound = re.search(r"(?mi)^(?:overall_soundscape|non_diegetic_music)\s*:", prompt)
+    head, tail = (prompt[:sound.start()], "\n\n" + prompt[sound.start():]) if sound else (prompt, "")
+    return head.rstrip() + " " + sentence + tail
+
+
 # a Markdown backslash escape: a backslash before any ASCII punctuation
 _ESCAPED = re.compile(r"\\([!-/:-@\[-`{-~])")
 

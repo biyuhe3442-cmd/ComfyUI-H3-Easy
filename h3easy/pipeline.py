@@ -421,7 +421,7 @@ def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, 
     for card, media, seg in zip(cards, medias, segments):
         name = f"镜头 {card.number}"
         reference = card.mode == shotlist.REFERENCE
-        prompt = card.prompt
+        prompt = shotlist.keep_references_out(card.prompt) if reference and card.pictures else card.prompt
         if reference and media.audios:
             offset = sum(audio is not None for audio in media.video_audios)
             if offset:
