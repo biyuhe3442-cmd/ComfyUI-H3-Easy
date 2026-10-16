@@ -1088,7 +1088,8 @@ def test_hard_cuts_receive_the_previous_last_frame_and_reroll_dependents(env, tm
     kwargs = _shot_list_kwargs(env, prompt=prompt, width=256, height=256, progressive=False)
     result = H3EasyGenerate.execute(**kwargs).args
     files = [clip.get_stream_source() for clip in result[4]]
-    assert [len(images) for _, images in calls] == [2, 3, 3, 2]
+    # shots 1 and 4 (the same card) are encoded once, up front; 2 and 3 wait for the video before them
+    assert [len(images) for _, images in calls] == [2, 3, 3]
     assert calls[0][0] == "detailed_description:\n[Shot 1] The man listens without speaking."
     assert "<Picture 3>" in calls[1][0] and "preceding shot" in calls[1][0]
     torch.testing.assert_close(calls[1][1][-1], video_output.last_frame(files[0]))
@@ -1163,7 +1164,7 @@ def test_disk_export_resume_and_reroll(env, tmp_path, monkeypatch):
     assert changed[0].get_frame_count() == 231
 
 
-def test_106_disk_shots_start_immediately_and_release_each_picture_batch(env, tmp_path, monkeypatch):
+def test_106_disk_shots_encode_once_and_release_each_picture_batch(env, tmp_path, monkeypatch):
     import weakref
     from h3easy import assemble, pipeline, shotlist, video_output
     from h3easy.media import Media
@@ -1182,7 +1183,7 @@ def test_106_disk_shots_start_immediately_and_release_each_picture_batch(env, tm
             return None
 
         def write(self, index, images):
-            assert clip.calls == len(written) + 1  # no all-chapter conditioning phase
+            assert clip.calls == 106  # every prompt encoded in one text-encoder session, before the first picture
             assert all(ref() is None for ref in previous_frames)
             assert images.shape == (192, 64, 64, 3)
             previous_frames.append(weakref.ref(images))
@@ -1199,7 +1200,7 @@ def test_106_disk_shots_start_immediately_and_release_each_picture_batch(env, tm
             return torch.zeros(1, latent.shape[-1] * 6, 2)
 
     monkeypatch.setattr(video_output, "ShotRun", Writer)
-    text = "\n".join(f"SHOT {n:02}\nDuration: 8s\nMode: I2VA\nH3 Prompt:\na cat" for n in range(1, 107))
+    text = "\n".join(f"SHOT {n:02}\nDuration: 8s\nMode: I2VA\nH3 Prompt:\ncat number {n}" for n in range(1, 107))
     result = pipeline.run_shot_list(_settings(pipeline, progressive=False, width=64, height=64),
                                     {False: env["model"]}, clip, FakeVideoVAE(), SmallAudioVAE(),
                                     shotlist.parse(text), [Media() for _ in range(106)])

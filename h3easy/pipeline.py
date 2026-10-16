@@ -490,22 +490,49 @@ def _sample_segment(settings, report, model, sigmas, sampler, builder, positive,
 
 def _generate_to_disk(settings, report, models, clip, video_vae, audio_vae, shots, segments,
                       learned_upscaler, seeds, keys):
+    chains = assemble.chains(segments)
+    writers = [video_output.ShotRun([keys[i] for i in indices], [segments[i] for i in indices]) for indices in chains]
+    saved = [writer.load() for writer in writers]  # a run's soundtrack once all its videos are on disk
+    stored = {i: shotcache.load(keys[i]) for indices, audio in zip(chains, saved) if audio is None for i in indices}
+    builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height, settings.ref_image_size)
+
+    def condition(shot, seg):
+        report.add(f"{shot.name}正在编码提示词和参考素材（{seg.index + 1}/{len(shots)}）")
+        if shot.reference:
+            positive, latent = builder.reference_mode(shot.prompt, seg.frames, shot.media)
+        else:
+            positive, latent = builder.image_mode(shot.prompt, seg.frames, shot.media, None)
+        return positive, latent["samples"]
+
+    # 1. The text encoder is far larger than the video model: encode every shot still to sample in one
+    # session, as the in-memory path did. Only a shot that takes the previous shot's last frame has to
+    # wait for that shot's video.
+    conds = {}
+    for index, done in stored.items():
+        if done is None and not shots[index].frame_reference:
+            mm.throw_exception_if_processing_interrupted()
+            conds[index] = condition(shots[index], segments[index])
+    if conds:
+        report.add("条件编码完成")
+        if settings.low_vram:
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+
+    # 2. sample, decode and save each run of shots
     sampler = comfy.samplers.sampler_object(settings.sampler_name)
     prepared, tst_states = {}, []
     files, audio_parts, preview = [], [], None
-    for indices in assemble.chains(segments):
+    for indices, writer, audio_out in zip(chains, writers, saved):
         mm.throw_exception_if_processing_interrupted()
-        writer = video_output.ShotRun([keys[i] for i in indices], [segments[i] for i in indices])
         label = shots[indices[0]].name.strip()
         if len(indices) > 1:
             label += " 至 " + shots[indices[-1]].name.strip()
-        audio_out = writer.load()
         if audio_out is None:
             pending, previous, audio_latents = None, None, []
             for local, index in enumerate(indices):
                 mm.throw_exception_if_processing_interrupted()
                 seg, shot = segments[index], shots[index]
-                done = shotcache.load(keys[index])
+                done = stored.pop(index)
                 if done is None:
                     if shot.frame_reference:
                         frame = video_output.last_frame(files[-1])
@@ -519,18 +546,12 @@ def _generate_to_disk(settings, report, models, clip, video_vae, audio_vae, shot
                             "Apply the camera framing described below; this reference is not a literal first frame or a new character.")
                         shot = dataclasses.replace(shot, media=media,
                                                    prompt=shotlist.add_visual_instructions(shot.prompt, instructions))
-                        report.add(f"{shot.name}用上一镜尾帧作为 {tag}，承接空间与动作状态")
-                    report.add(f"{shot.name}正在编码提示词和参考素材（{index + 1}/{len(shots)}）")
-                    builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height,
-                                                  settings.ref_image_size)
-                    if shot.reference:
-                        positive, latent = builder.reference_mode(shot.prompt, seg.frames, shot.media)
-                    else:
-                        positive, latent = builder.image_mode(shot.prompt, seg.frames, shot.media, None)
-                    report.add(f"{shot.name}条件编码完成，开始生成")
-                    if settings.low_vram:
-                        mm.unload_all_models()
-                        mm.soft_empty_cache()
+                        report.add(f"{shot.name}用上一镜尾帧作为 {tag}，承接空间与动作状态（文本编码器要再加载一次）")
+                        conds[index] = condition(shot, seg)
+                        if settings.low_vram:
+                            mm.unload_all_models()
+                            mm.soft_empty_cache()
+                    positive, target = conds.pop(index)
                     if shot.reference not in prepared:
                         model = models[shot.reference]
                         sigmas = _sigmas(model, settings.scheduler, settings.steps)
@@ -540,9 +561,9 @@ def _generate_to_disk(settings, report, models, clip, video_vae, audio_vae, shot
                         prepared[shot.reference] = model, sigmas
                     model, sigmas = prepared[shot.reference]
                     done = _sample_segment(settings, report, model, sigmas, sampler, builder, positive,
-                                           latent["samples"], seg, shot, previous, seeds[index], learned_upscaler)
+                                           target, seg, shot, previous, seeds[index], learned_upscaler)
                     shotcache.save(keys[index], *done)
-                    del builder, positive, latent
+                    del positive, target
                 else:
                     report.add(f"{shot.name}沿用上次的结果，没有重新生成")
                 video, audio = done
