@@ -952,6 +952,28 @@ def test_shot_list_audio_labels_skip_video_soundtracks(env, monkeypatch):
     assert len(result.clip_files) == 1 and torch.isfinite(result.images).all()
 
 
+def test_loader_timing_is_correct_when_panel_value_is_stale(monkeypatch):
+    import types
+    from h3easy.nodes import H3EasyMediaLoader
+
+    graph = {"8": {"class_type": "H3EasyMediaLoader", "inputs": {}},
+             "9": {"class_type": "H3EasyGenerate", "inputs": {
+                 "media": ["8", 0], "prompt": "a cat", "segments": 1, "segment_seconds": 5.0}}}
+    monkeypatch.setattr(H3EasyMediaLoader, "hidden", types.SimpleNamespace(prompt=graph, unique_id="8"))
+    _, seconds, frames = H3EasyMediaLoader.execute(clip_seconds=10).args
+    assert frames == 141 and seconds == 141 / 24
+    before = H3EasyMediaLoader.fingerprint_inputs(clip_seconds=10)
+    graph["9"]["inputs"]["segments"] = 2
+    graph["9"]["inputs"]["segment_seconds"] = 6.0
+    _, seconds, frames = H3EasyMediaLoader.execute(clip_seconds=10).args
+    assert frames == 192 and seconds == 8
+    assert H3EasyMediaLoader.fingerprint_inputs(clip_seconds=10) != before
+    # change detection gets no workflow: the number the panel wrote down decides
+    monkeypatch.setattr(H3EasyMediaLoader, "hidden", types.SimpleNamespace(prompt={}, unique_id="8"))
+    assert H3EasyMediaLoader.execute(clip_seconds=10).args[1:] == (10, 243)
+    assert H3EasyMediaLoader.fingerprint_inputs(clip_seconds=6) != H3EasyMediaLoader.fingerprint_inputs(clip_seconds=10)
+
+
 def test_replacing_model_and_media_files_invalidates_signatures(tmp_path, monkeypatch):
     import folder_paths
     from h3easy.media import file_signature

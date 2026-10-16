@@ -217,6 +217,13 @@ def looks_like_sheet(text: str) -> bool:
     return bool(_PROMPT_LABEL.search(text or ""))
 
 
+def continuations(shots: list[Shot]) -> list[bool]:
+    """Effective joins: changing mode or supplying a first frame starts a new shot."""
+    return [bool(shot.continues and index > 0 and shot.mode == shots[index - 1].mode
+                 and not (shot.mode == IMAGE and shot.pictures))
+            for index, shot in enumerate(shots)]
+
+
 def problems(shots: list[Shot]) -> list[str]:
     """What stops a shot list from running, one line per finding."""
     out = []

@@ -13,7 +13,7 @@ from comfy_api.latest import InputImpl, Types, io
 from comfy_execution.graph_utils import is_link
 
 from . import media as media_io
-from . import shotlist, video_output
+from . import shotlist, timing, video_output
 from .media import AUDIO_SLOTS, NONE, REF_SLOTS, VIDEO_SLOTS, Media
 from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run, run_shot_list
 
@@ -53,14 +53,27 @@ class H3EasyMediaLoader(io.ComfyNode):
             inputs.append(io.Combo.Input(
                 f"video_{i}", options=videos, default=NONE, display_name=f"视频{i}",
                 tooltip=f"参考模式：参考视频，提示词里用 <Video {i}> 指代；最多读取 15 秒，自带音轨一起作为参考。"))
+        # The panel keeps this up to date from the connected 「H3 一键生成」 (it is hidden on the node):
+        # the longest actual generation, from the same planner used by the generator.
+        inputs.append(io.Float.Input(
+            "clip_seconds", default=6.0, min=0.0, max=120.0, step=0.001, display_name="单次时长",
+            tooltip="这次运行里最长的一次生成的实际时长。由素材面板自动填写，使用与生成节点相同的时长规划；"
+                    "续写包含重复部分，改为硬切的镜头按硬切计算。"))
         return io.Schema(
             node_id="H3EasyMediaLoader",
             display_name="H3 素材加载器",
             category=CATEGORY,
             description="可视化素材面板：首帧/尾帧、最多 9 张参考图、3 段参考视频、3 段音频（与官方 H3 上限一致）。"
-                        "面板会跟随「H3 一键生成」的模式只显示用得到的素材；点击卡片或直接拖入文件。",
+                        "面板会跟随「H3 一键生成」的模式只显示用得到的素材；点击卡片或直接拖入文件。"
+                        "「时长」「帧数」两个输出给预览一类需要知道片子多长的节点用。",
             inputs=inputs,
-            outputs=[MediaType.Output(display_name="素材")],
+            hidden=[io.Hidden.prompt, io.Hidden.unique_id],
+            outputs=[
+                MediaType.Output(display_name="素材"),
+                io.Float.Output(display_name="时长",
+                                tooltip="这次运行里最长的一次生成的实际时长，按生成节点的时长档位计算，包含续写的重复部分。"),
+                io.Int.Output(display_name="帧数", tooltip="同一段时长按 24 帧/秒折成的帧数（取 H3 实际会生成的长度）。"),
+            ],
         )
 
     @classmethod
@@ -74,7 +87,26 @@ class H3EasyMediaLoader(io.ComfyNode):
     @classmethod
     def fingerprint_inputs(cls, **kwargs):
         names = [kwargs.get(name, NONE) for name in FILE_FIELDS]
-        return hashlib.sha256(media_io.file_signature(names).encode("utf-8")).hexdigest()
+        signature = str((media_io.file_signature(names), cls._clip_timing(kwargs)))
+        return hashlib.sha256(signature.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _clip_timing(cls, kwargs):
+        seconds = float(kwargs.get("clip_seconds") or 0) or 6.0
+        frames = timing.frames_for_seconds(seconds)
+        # Read queued literal settings too: the panel's asynchronous update may still be pending.
+        if cls.hidden is not None and cls.hidden.prompt:
+            for node in cls.hidden.prompt.values():
+                inputs = node["inputs"]
+                link = inputs.get("media")
+                if (node["class_type"] == "H3EasyGenerate" and is_link(link)
+                        and str(link[0]) == str(cls.hidden.unique_id)):
+                    values = [inputs.get("prompt", ""), inputs.get("segments", 1), inputs.get("segment_seconds", 6.0)]
+                    if not any(is_link(value) for value in values):
+                        frames = timing.generation_frames(*values)
+                        seconds = frames / timing.FPS
+                    break
+        return seconds, frames
 
     @classmethod
     def execute(cls, **kwargs) -> io.NodeOutput:
@@ -94,7 +126,8 @@ class H3EasyMediaLoader(io.ComfyNode):
             if media_io.selected(kwargs.get(name)):
                 bundle.videos.append(media_io.load_video_frames(kwargs[name]))
                 bundle.video_audios.append(media_io.load_video_audio(kwargs[name]))
-        return io.NodeOutput(bundle)
+        seconds, frames = cls._clip_timing(kwargs)
+        return io.NodeOutput(bundle, seconds, frames)
 
 
 def upstream(prompt: dict, node_id: str, names: list[str]) -> list:

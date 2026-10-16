@@ -9,6 +9,28 @@ from h3easy import timing  # noqa: E402
 from h3easy.prompts import split_prompts  # noqa: E402
 
 
+def test_preview_uses_the_generation_plan():
+    for seconds in (3.5, 5, 6, 8, 10, 14):
+        for count in (1, 2, 3):
+            assert timing.generation_frames("a cat", count, seconds) == max(
+                segment.frames for segment in timing.plan_segments(count, seconds))
+    # Mode changes and a first frame turn a requested continuation into a cut.
+    text = ("SHOT 01\nDuration: 5s\nMode: Ref2VA\nH3 Prompt:\nhello\n"
+            "SHOT 02\nDuration: 5s\nMode: I2VA\nReferences:\n<Picture 1> `first.png`\n"
+            "接上一镜：续写\nH3 Prompt:\nhello")
+    assert timing.generation_frames(text, 20, 14) == 124
+    continued = text.replace("Mode: I2VA", "Mode: Ref2VA")
+    assert timing.generation_frames(continued, 1, 3.5) == 192
+    assert timing.generation_frames("```markdown\n" + continued + "\n```", 1, 3.5) == 192
+
+
+def test_the_loader_reports_frames_for_the_longest_generation():
+    # what 「H3 素材加载器」 hands out as 帧数 for the seconds its panel wrote down
+    assert [timing.frames_for_seconds(s) for s in (5, 6, 10, 15)] == [124, 158, 243, 362]
+    assert timing.frames_for_seconds(8 + 39 / 24) == 243   # a shot that continues the one before carries its prefix
+    assert timing.frames_for_seconds(0.5) == 90 and timing.frames_for_seconds(60) == 362
+
+
 def test_exact_av_grid():
     for frames in range(39, 400, 51):
         assert timing.is_valid_frame_count(frames)

@@ -399,16 +399,14 @@ def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, 
     """
     report = Reporter()
     settings = _snapped(settings, report)
-    continues, notes = [], []
-    for index, (card, media) in enumerate(zip(cards, medias)):
-        joined = card.continues and index > 0
-        if joined and card.mode != cards[index - 1].mode:
-            joined = False
+    continues, notes = shotlist.continuations(cards), []
+    for index, card in enumerate(cards):
+        if not card.continues or index == 0:
+            continue
+        if card.mode != cards[index - 1].mode:
             notes.append(f"提示：镜头 {card.number} 和上一个镜头的模式不同，不能续写，按硬切处理")
-        elif joined and media.first_frame is not None:
-            joined = False
+        elif card.mode == shotlist.IMAGE and card.pictures:
             notes.append(f"提示：镜头 {card.number} 有自己的首帧，不能续写，按硬切处理")
-        continues.append(joined)
     segments = timing.plan_shots([(card.seconds, joined) for card, joined in zip(cards, continues)])
 
     report.add(f"出片清单：{len(cards)} 个镜头，总时长 {assemble.total_seconds(segments):.2f}s，"

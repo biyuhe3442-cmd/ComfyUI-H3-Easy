@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import shotlist
+
 FPS = 24
 AUDIO_FPS = 40
 FRAME_PER_TOKEN = (1, 4, 4, 4, 4)
@@ -124,6 +126,24 @@ def frames_at_least(requested: int, exact_av: bool) -> int:
     else:
         lengths, slack = range(MIN_SEGMENT_FRAMES, MAX_SHOT_FRAMES + 1, 17), 0
     return next((frames for frames in lengths if frames >= requested - slack), lengths[-1])
+
+
+def frames_for_seconds(seconds: float) -> int:
+    """Frames of one generation asked to run ``seconds``: the shortest H3 length that covers them."""
+    return frames_at_least(max(1, round(float(seconds) * FPS)), False)
+
+
+def generation_frames(prompt: str, count: int, seconds: float) -> int:
+    """Longest actual generation, using the same plan as the generation node."""
+    cards = shotlist.parse(prompt)
+    if cards:
+        problems = shotlist.problems(cards)
+        if problems:
+            raise ValueError("\n".join(problems))
+        segments = plan_shots([(card.seconds, joined) for card, joined in zip(cards, shotlist.continuations(cards))])
+    else:
+        segments = plan_segments(count, seconds)
+    return max(segment.frames for segment in segments)
 
 
 def plan_shots(shots: list[tuple[float, bool]]) -> list[Segment]:

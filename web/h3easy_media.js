@@ -22,6 +22,8 @@ const REFS = Array.from({ length: LIMIT.image }, (_, i) => `ref_image_${i + 1}`)
 const VIDEOS = Array.from({ length: LIMIT.video }, (_, i) => `video_${i + 1}`);
 const AUDIOS = Array.from({ length: LIMIT.audio }, (_, i) => `audio_${i + 1}`);
 const ALL_SLOTS = [...FRAMES.map((f) => f[0]), ...REFS, ...AUDIOS, ...VIDEOS];
+// the loader's hidden number behind its 时长 / 帧数 outputs: seconds of the longest single generation
+const CLIP_SECONDS = "clip_seconds";
 const ACCEPT = {
     image: "image/*,.png,.jpg,.jpeg,.webp,.bmp",
     audio: "audio/*,video/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.mp4,.mov",
@@ -464,6 +466,55 @@ function writeTakes(generator, takes) {
     return true;
 }
 
+// A number set on a node: its widget, or the node that is wired into it (a float or integer primitive).
+function numberOn(node, name) {
+    const graph = node.graph;
+    const linked = node.inputs?.find((i) => i.name === name)?.link;
+    if (linked != null) {
+        const link = graph?.getLink?.(linked) ?? graph?.links?.get?.(linked) ?? graph?.links?.[linked];
+        const source = link && graph.getNodeById(link.origin_id);
+        const value = Number(source?.widgets?.find((w) => typeof w.value === "number")?.value);
+        if (isFinite(value)) return value;
+    }
+    const value = Number(findWidget(node, name)?.value);
+    return isFinite(value) ? value : null;
+}
+
+// Ask the backend's generation planner, including rounded durations and joins that become cuts.
+const RUNS = new WeakMap();
+function longestRun(generator, onReady) {
+    const text = !promptLinked(generator) && findWidget(generator, "prompt")?.value;
+    const seconds = numberOn(generator, "segment_seconds");
+    if (!seconds) return null;
+    const body = JSON.stringify({ prompt: typeof text === "string" ? text : "",
+        segments: numberOn(generator, "segments") || 1, segment_seconds: seconds });
+    let run = RUNS.get(generator);
+    if (!run || run.body !== body) {
+        run = { body, value: null };
+        RUNS.set(generator, run);
+        run.pending = api.fetchApi("/h3easy/timing", { method: "POST", headers: { "Content-Type": "application/json" }, body })
+            .then((r) => r.ok ? r.json() : null)
+            .then((info) => {
+                if (RUNS.get(generator) !== run) return;
+                run.value = info && { ...info, from: typeof text === "string" && SHEET.test(text)
+                    ? "清单的实际生成时长" : "「每段秒数」对应的实际生成时长" };
+                onReady();
+            }).catch(() => {});
+    }
+    return run.value;
+}
+
+async function clipSecondsForQueue(generator, current) {
+    let run;
+    do {
+        longestRun(generator, () => {});
+        run = RUNS.get(generator);
+        await run?.pending;
+        longestRun(generator, () => {});
+    } while (run !== RUNS.get(generator));
+    return run?.value ? Math.round(run.value.seconds * 1000) / 1000 : current;
+}
+
 // duration / soundtrack info from the plugin's /h3easy/media_info route
 const INFO = new Map();
 function mediaInfo(name, onReady) {
@@ -648,6 +699,30 @@ class MediaPanel {
         if (!failed.length) return;
         const names = failed.slice(0, 8).map(([name]) => name).join("\n") + (failed.length > 8 ? `\n……共 ${failed.length} 个` : "");
         alert(`这 ${failed.length} 个文件没有传上去：\n${names}\n\n原因：${failed[0][1].message ?? failed[0][1]}`);
+    }
+
+    // Keep the hidden number behind the 时长 / 帧数 outputs in step with the generator. Returns what
+    // it now says, or nothing when this loader has no such outputs (ComfyUI not restarted since the
+    // plugin was updated) or no generator to ask.
+    syncClip() {
+        const widget = findWidget(this.node, CLIP_SECONDS);
+        const generator = linkedGenerators(this.node)[0];
+        const run = widget && generator && longestRun(generator, () => this.renderSoon());
+        if (!run) return null;
+        const seconds = Math.round(run.seconds * 1000) / 1000;
+        if (widget.value !== seconds) {
+            widget.value = seconds;
+            this.node.setDirtyCanvas?.(true, true);
+        }
+        return run;
+    }
+
+    clipNote() {
+        const run = this.syncClip();
+        if (!run) return null;
+        const note = el("div", "h3e-note", `「时长」「帧数」输出口现在给出 ${Math.round(run.seconds * 10) / 10} 秒（${run.frames} 帧）：取自${run.from}`);
+        note.title = "接到预览一类需要知道片子多长的节点上。用出片清单时跟着清单走，不用清单时跟着「H3 一键生成」的每段秒数走";
+        return note;
     }
 
     // ---------- director shot list ----------
@@ -1128,6 +1203,8 @@ class MediaPanel {
         } else {
             bar.append(el("span", "", "正在读取…"));
         }
+        const clip = this.clipNote();
+        if (clip) inner.append(clip);
         inner.append(this.importRow(), this.aiRow());
         const foot = el("div", "h3e-foot");
         const clear = el("button", "h3e-btn", "清空清单");
@@ -1754,6 +1831,8 @@ class MediaPanel {
             if (note) inner.append(el("div", "h3e-note", note));
         }
 
+        const clip = this.clipNote();
+        if (clip) inner.append(clip);
         if (mode) inner.append(this.importRow(), this.aiRow());
         const foot = el("div", "h3e-foot");
         const clear = el("button", "h3e-btn", "清空全部");
@@ -1965,7 +2044,7 @@ app.registerExtension({
         }
         if (type !== LOADER || node.__h3ePanel) return;
         ensureStyle();
-        for (const name of ALL_SLOTS) hideWidget(findWidget(node, name));
+        for (const name of [...ALL_SLOTS, CLIP_SECONDS]) hideWidget(findWidget(node, name));
         const panel = new MediaPanel(node);
         node.__h3ePanel = panel;
         const widget = node.addDOMWidget("media_panel", "h3easy_media_panel", panel.root, {
@@ -1976,6 +2055,17 @@ app.registerExtension({
         });
         widget.serialize = false;
         panel.widget = widget;
+        // the number is read again right before a run is queued, whatever was changed last
+        const clip = findWidget(node, CLIP_SECONDS);
+        if (clip) {
+            clip.beforeQueued = () => panel.syncClip();
+            // ComfyUI awaits widget serialization; beforeQueued itself does not await requests.
+            clip.serializeValue = async () => {
+                const generator = linkedGenerators(node)[0];
+                if (generator) clip.value = await clipSecondsForQueue(generator, clip.value);
+                return clip.value;
+            };
+        }
         const configure = node.onConfigure;
         node.onConfigure = function (...args) {
             const result = configure?.apply(this, args);

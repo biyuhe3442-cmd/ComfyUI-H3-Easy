@@ -9,7 +9,7 @@ from aiohttp import web
 import folder_paths
 from server import PromptServer
 
-from . import shotlist
+from . import shotlist, timing
 from .media import NONE, SHOT_REFS, find_shot_files, probe
 
 
@@ -25,6 +25,18 @@ async def shot_list(request):
                              for group, _ in SHOT_REFS for ref, name in zip(getattr(shot, group), names[group])]}
                   for shot, names in zip(shots, found)],
     })
+
+
+@PromptServer.instance.routes.post("/h3easy/timing")
+async def generation_timing(request):
+    """The loader's 时长 / 帧数 for the generator's current settings, from the generator's own planner."""
+    data = await request.json()
+    try:
+        frames = timing.generation_frames(data.get("prompt", ""), int(data.get("segments", 1)),
+                                          float(data.get("segment_seconds", 6.0)))
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"frames": frames, "seconds": frames / timing.FPS})
 
 
 @PromptServer.instance.routes.get("/h3easy/media_info")
