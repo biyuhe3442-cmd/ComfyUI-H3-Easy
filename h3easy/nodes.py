@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from fractions import Fraction
 
@@ -12,7 +13,7 @@ from comfy_api.latest import InputImpl, Types, io
 from comfy_execution.graph_utils import is_link
 
 from . import media as media_io
-from . import shotlist
+from . import shotlist, video_output
 from .media import AUDIO_SLOTS, NONE, REF_SLOTS, VIDEO_SLOTS, Media
 from .pipeline import MODE_IMAGE, MODE_REFERENCE, UPSCALE_METHODS, UPSCALE_PIXEL, Settings, run, run_shot_list
 
@@ -107,6 +108,16 @@ def upstream(prompt: dict, node_id: str, names: list[str]) -> list:
             node = prompt[source]
             described[source] = [node["class_type"], {name: describe(value) if is_link(value) else value
                                                       for name, value in sorted(node["inputs"].items())}]
+            files = set()
+            for value in node["inputs"].values():
+                if isinstance(value, str):
+                    for category, (_, extensions) in folder_paths.folder_names_and_paths.items():
+                        if os.path.splitext(value)[1].lower() in extensions:
+                            path = folder_paths.get_full_path(category, value)
+                            if path:
+                                files.add(path)
+            if files:
+                described[source].append([[path, media_io.path_signature(path)] for path in sorted(files)])
         return [described[source], link[1]]
 
     inputs = prompt[str(node_id)]["inputs"]
@@ -201,7 +212,8 @@ class H3EasyGenerate(io.ComfyNode):
             hidden=[io.Hidden.prompt, io.Hidden.unique_id],
             outputs=[
                 io.Video.Output(display_name="视频"),
-                io.Image.Output(display_name="画面"),
+                io.Image.Output(display_name="画面",
+                                tooltip="全片的每一帧。出片清单逐个镜头存进 output/H3Easy，这里只给第一帧做预览。"),
                 io.Audio.Output(display_name="音频"),
                 io.String.Output(display_name="报告"),
                 io.Video.Output(display_name="分镜头", is_output_list=True,
@@ -282,19 +294,16 @@ class H3EasyGenerate(io.ComfyNode):
         if cards:
             result = run_shot_list(settings, models, clip, video_vae, audio_vae, cards,
                                    media_io.load_shot_media(cards), learned_upscaler)
-        else:
-            result = run(settings, models[mode == MODE_REFERENCE], clip, video_vae, audio_vae, media,
-                         learned_upscaler)
+            complete = video_output.join(result.clip_files, result.audio)
+            print(f"[H3 Easy] 完整视频已保存：{complete}", flush=True)
+            return io.NodeOutput(InputImpl.VideoFromFile(complete), result.images, result.audio,
+                                 result.report + f"\n完整视频已保存：{complete}",
+                                 [InputImpl.VideoFromFile(path) for path in result.clip_files])
+        result = run(settings, models[mode == MODE_REFERENCE], clip, video_vae, audio_vae, media, learned_upscaler)
 
-        def video(images, audio):
-            return InputImpl.VideoFromComponents(
-                Types.VideoComponents(images=images, audio=audio, frame_rate=Fraction(24)))
-
-        waveform, rate = result.audio["waveform"], result.audio["sample_rate"]
-        clips = [video(result.images[first:last],
-                       {"waveform": waveform[..., first * rate // 24:last * rate // 24], "sample_rate": rate})
-                 for first, last in result.clips]
-        return io.NodeOutput(video(result.images, result.audio), result.images, result.audio, result.report, clips)
+        video = InputImpl.VideoFromComponents(
+            Types.VideoComponents(images=result.images, audio=result.audio, frame_rate=Fraction(24)))
+        return io.NodeOutput(video, result.images, result.audio, result.report, [video])
 
 
 NODES = [H3EasyMediaLoader, H3EasyGenerate]

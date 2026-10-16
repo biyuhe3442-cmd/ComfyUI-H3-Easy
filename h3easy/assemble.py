@@ -38,26 +38,34 @@ def _decode_video(vae, latent: torch.Tensor) -> torch.Tensor:
     return images
 
 
+def decode_segment(vae, latent: torch.Tensor, segment: Segment,
+                   following: torch.Tensor | None = None) -> torch.Tensor:
+    if following is not None:
+        context = following[:, :, CONTEXT_SLOTS:CONTEXT_SLOTS + DECODE_CONTEXT_SLOTS].to(latent)
+        latent = torch.cat([latent, context], dim=2)
+    frames = _decode_video(vae, latent)
+    if frames.shape[0] < segment.frames:
+        raise RuntimeError(f"segment {segment.index + 1} decoded {frames.shape[0]} frames, expected {segment.frames}")
+    return frames[segment.prefix_frames:segment.frames]
+
+
 def decode_video(vae, video_latents: list[torch.Tensor], segments: list[Segment],
                  on_segment=None) -> torch.Tensor:
-    pieces = []
+    video = None
+    cursor = 0
     for index, right, drop in decode_plan(segments):
-        latent = video_latents[index]
-        if right:
-            nxt = video_latents[index + 1]
-            context = nxt[:, :, CONTEXT_SLOTS:CONTEXT_SLOTS + right].to(latent)
-            latent = torch.cat([latent, context], dim=2)
-        frames = _decode_video(vae, latent)
+        frames = decode_segment(vae, video_latents[index], segments[index],
+                                video_latents[index + 1] if right else None)
         want = segments[index].frames
-        if frames.shape[0] < want:
-            raise RuntimeError(f"segment {index + 1} decoded {frames.shape[0]} frames, expected {want}")
-        pieces.append(frames[drop:want].to("cpu", torch.float16))
+        if video is None:
+            video = torch.empty((segments[-1].end_frame, *frames.shape[1:]), device="cpu", dtype=torch.float32)
+        count = want - drop
+        video[cursor:cursor + count].copy_(frames)
+        cursor += count
         del frames
         if on_segment is not None:
             on_segment(index)
-    video = torch.cat(pieces, dim=0)
-    del pieces
-    return video.float()
+    return video
 
 
 def chains(segments: list[Segment]) -> list[list[int]]:

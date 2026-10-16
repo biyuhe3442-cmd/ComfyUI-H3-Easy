@@ -128,12 +128,19 @@ def load_video_audio(name: str) -> dict | None:
         return None
 
 
+def path_signature(path: str) -> str:
+    if not os.path.isfile(path):
+        return "missing"
+    stat = os.stat(path)
+    return f"{stat.st_size}:{stat.st_mtime_ns}:{stat.st_ctime_ns}"
+
+
 def file_signature(names: list[str]) -> str:
     parts = []
     for name in names:
         if selected(name):
             path = folder_paths.get_annotated_filepath(name)
-            parts.append(f"{name}:{os.path.getmtime(path) if os.path.exists(path) else 'missing'}")
+            parts.append(f"{name}:{path_signature(path)}")
         else:
             parts.append(NONE)
     return "|".join(parts)

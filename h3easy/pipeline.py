@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -22,9 +23,10 @@ import comfy.sample
 import comfy.samplers
 import comfy.utils
 import latent_preview
+from comfy_extras.nodes_audio import vae_decode_audio
 from comfy_extras.nodes_custom_sampler import Guider_Basic
 
-from . import assemble, continuation, refs, shotcache, shotlist, timing
+from . import assemble, continuation, refs, shotcache, shotlist, timing, video_output
 from .conditioning import ConditioningBuilder, empty_av_latent
 from .media import Media
 from .prompts import split_prompts
@@ -73,6 +75,7 @@ class Shot:
     prompt: str
     reference: bool  # ref2va model, otherwise fl2va
     media: Media     # exactly what this generation uses
+    frame_reference: bool = False
 
 
 @dataclass
@@ -81,7 +84,7 @@ class Result:
     audio: dict
     report: str
     log: list[str] = field(default_factory=list)
-    clips: list[tuple[int, int]] = field(default_factory=list)  # frame range of each separately usable part
+    clip_files: list[str] = field(default_factory=list)  # shot list: one video per shot, images is the first frame
 
 
 class Reporter:
@@ -185,11 +188,14 @@ def _progressive_first_segment(model, builder, positive, segment, shot, settings
     _, low_audio = continuation.split_av(low_out)
     del low_out, x0, x0_store
     if settings.low_vram:
+        if learned_upscaler is not None:
+            mm.unload_all_models()
         mm.soft_empty_cache()
 
     up = _upscale_video(x0_video, settings.upscale_method, builder.video_vae, settings.width, settings.height,
                         learned_upscaler, report, shot.name)
     del x0_video
+    report.add(f"{shot.name}放大完成，开始高分辨率生成（{len(sigmas) - 1 - k} 步，{settings.width}×{settings.height}）")
     generator = torch.Generator().manual_seed((seed + 0x5EED) & 0xFFFFFFFFFFFFFFFF)
     noise = torch.randn(up.shape, generator=generator, dtype=torch.float32)
     sigma = sigmas[k:k + 1].float()
@@ -251,11 +257,14 @@ def _progressive_continuation(model, builder, positive, video_ctx, audio_ctx, se
     x0_audio = x0_audio / float(getattr(model_sampling, "audio_scale", 1.0))
     del x0, x0_store, low_latent, low_mask
     if settings.low_vram:
+        if learned_upscaler is not None:
+            mm.unload_all_models()
         mm.soft_empty_cache()
 
     up = _upscale_video(x0_video, settings.upscale_method, builder.video_vae, settings.width, settings.height,
                         learned_upscaler, report, shot.name)
     del x0_video
+    report.add(f"{shot.name}放大完成，开始高分辨率生成（{len(sigmas) - 1 - k} 步，{settings.width}×{settings.height}）")
     clean, mask = continuation.apply_prefix(continuation.join_av(up, x0_audio), video_ctx, audio_ctx)
     generator = torch.Generator().manual_seed((seed + 0x5EED) & 0xFFFFFFFFFFFFFFFF)
     noise = continuation.join_av(torch.randn(up.shape, generator=generator, dtype=torch.float32),
@@ -377,14 +386,16 @@ def run(settings: Settings, model, clip, video_vae, audio_vae, media: Media | No
         shots.append(Shot(f"第 {seg.index + 1} 段", prompt, not image_mode, own))
     seeds = [(settings.seed + seg.index) & 0xFFFFFFFFFFFFFFFF for seg in segments]
     return _generate(settings, report, {not image_mode: model}, clip, video_vae, audio_vae, shots, segments,
-                     lock_source, learned_upscaler, seeds, clips=[(0, segments[-1].end_frame)])
+                     lock_source, learned_upscaler, seeds)
 
 
 def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, cards: list[shotlist.Shot],
                   medias: list[Media], learned_upscaler=None) -> Result:
     """A director shot list: one generation per card, with that card's mode, length and media.
 
-    ``models`` maps reference mode (True) and image mode (False) to their models.
+    ``models`` maps reference mode (True) and image mode (False) to their models. Each shot is
+    written to its own video file as soon as it is decoded, so a long list never holds all its
+    frames in memory; ``images`` of the result is only the first frame.
     """
     report = Reporter()
     settings = _snapped(settings, report)
@@ -412,10 +423,21 @@ def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, 
     for card, media, seg in zip(cards, medias, segments):
         name = f"镜头 {card.number}"
         reference = card.mode == shotlist.REFERENCE
+        prompt = card.prompt
+        if reference and media.audios:
+            offset = sum(audio is not None for audio in media.video_audios)
+            if offset:
+                # Cards number standalone audio from 1; Core numbers video soundtracks first.
+                prompt = re.sub(r"<\s*Audio\s*(\d+)\s*>",
+                                lambda tag: f"<Audio {int(tag[1]) + offset}>"
+                                if 1 <= int(tag[1]) <= len(media.audios) else tag[0], prompt, flags=re.IGNORECASE)
+                notes.append(f"提示：{name} 独立音频编号已避开 {offset} 段参考视频音轨，送入 H3 时从 <Audio {offset + 1}> 开始")
         # a shot keeps its seed from run to run; "re-roll" in the panel moves it to its next take
         seeds.append((card.number * 1_000_003 + settings.shot_versions.get(card.number, 1)) & 0xFFFFFFFFFFFFFFFF)
-        keys.append(shotcache.key(card.prompt, card.mode, seg.frames, media.stamp, seeds[-1], common,
-                                  settings.upstream.get(card.mode), keys[-1] if seg.prefix_frames else ""))
+        keys.append(shotcache.key(prompt, card.mode, seg.frames, media.stamp, seeds[-1], common,
+                                  settings.upstream.get(card.mode),
+                                  ["previous-frame-v1", keys[-1]] if card.frame_reference else
+                                  keys[-1] if seg.prefix_frames else ""))
         a, b = seg.new_window_seconds
         join = "续写" if seg.prefix_frames else "硬切" if seg.index else "开头"
         report.add(f"  {name}：{a:.2f}–{b:.2f}s，{'参考模式' if reference else '首帧模式'}，{join}，"
@@ -430,36 +452,150 @@ def run_shot_list(settings: Settings, models: dict, clip, video_vae, audio_vae, 
             notes.append(f"提示：{name} 的提示词里有 {'、'.join(unlisted)}，References 里没有列出对应素材")
         if not reference:
             media = _crop_keyframes(media, settings, report, name + " ")
-        shots.append(Shot(name + " ", card.prompt, reference, media))  # the report puts what happened right after it
+        # the report puts what happened right after the name
+        shots.append(Shot(name + " ", prompt, reference, media, card.frame_reference))
     aspect = cards[0].aspect
     if aspect and abs(math.log((settings.width / settings.height) / (aspect[0] / aspect[1]))) > 0.05:
         notes.append(f"提示：清单写的画幅是 {aspect[0]}:{aspect[1]}，节点设的输出是 {settings.width}×{settings.height}，"
                      f"按节点设的出")
     for note in notes:
         report.add(note)
-    return _generate(settings, report, models, clip, video_vae, audio_vae, shots, segments, None, learned_upscaler,
-                     seeds, clips=[(seg.start_frame + seg.prefix_frames, seg.end_frame) for seg in segments], keys=keys)
+    return _generate_to_disk(settings, report, models, clip, video_vae, audio_vae, shots, segments,
+                             learned_upscaler, seeds, keys)
+
+
+def _sample_segment(settings, report, model, sigmas, sampler, builder, positive, target, seg, shot,
+                    previous, seed, learned_upscaler, carry_audio=True):
+    started = time.perf_counter()
+    out = None
+    if not seg.prefix_frames:
+        if settings.progressive:
+            out = _progressive_first_segment(model, builder, positive, seg, shot, settings, sampler, sigmas,
+                                             seed, learned_upscaler, report)
+        if out is None:
+            out = _sample(model, positive, target, sigmas, sampler, seed)
+    else:
+        video_ctx, audio_ctx = continuation.tail_context(previous)
+        audio_ctx = audio_ctx if carry_audio else None
+        if settings.progressive_continuation:
+            out = _progressive_continuation(model, builder, positive, video_ctx, audio_ctx, seg, shot,
+                                            settings, sampler, sigmas, seed, learned_upscaler, report)
+        if out is None:
+            latent, mask = continuation.apply_prefix(target, video_ctx, audio_ctx)
+            out = _sample(model, positive, latent, sigmas, sampler, seed, mask=mask)
+        out = continuation.restore_prefix(out, video_ctx, audio_ctx)
+    video, audio = continuation.split_av(out)
+    result = video.to("cpu", torch.float32), audio.to("cpu", torch.float32)
+    report.add(f"{shot.name}采样完成，用时 {time.perf_counter() - started:.1f}s")
+    return result
+
+
+def _generate_to_disk(settings, report, models, clip, video_vae, audio_vae, shots, segments,
+                      learned_upscaler, seeds, keys):
+    sampler = comfy.samplers.sampler_object(settings.sampler_name)
+    prepared, tst_states = {}, []
+    files, audio_parts, preview = [], [], None
+    for indices in assemble.chains(segments):
+        mm.throw_exception_if_processing_interrupted()
+        writer = video_output.ShotRun([keys[i] for i in indices], [segments[i] for i in indices])
+        label = shots[indices[0]].name.strip()
+        if len(indices) > 1:
+            label += " 至 " + shots[indices[-1]].name.strip()
+        audio_out = writer.load()
+        if audio_out is None:
+            pending, previous, audio_latents = None, None, []
+            for local, index in enumerate(indices):
+                mm.throw_exception_if_processing_interrupted()
+                seg, shot = segments[index], shots[index]
+                done = shotcache.load(keys[index])
+                if done is None:
+                    if shot.frame_reference:
+                        frame = video_output.last_frame(files[-1])
+                        media = dataclasses.replace(shot.media, ref_images=shot.media.ref_images + [frame])
+                        tag = f"<Picture {len(media.ref_images)}>"
+                        instructions = (
+                            f"{tag} is the last frame of the preceding shot in this same scene. "
+                            "It is a visual state reference for character positions, posture, prop ownership and injuries. "
+                            "Keep those states unless the current action explicitly changes them; completed actions are not repeated. "
+                            "Use the original character references for facial identity and costume. "
+                            "Apply the camera framing described below; this reference is not a literal first frame or a new character.")
+                        shot = dataclasses.replace(shot, media=media,
+                                                   prompt=shotlist.add_visual_instructions(shot.prompt, instructions))
+                        report.add(f"{shot.name}用上一镜尾帧作为 {tag}，承接空间与动作状态")
+                    report.add(f"{shot.name}正在编码提示词和参考素材（{index + 1}/{len(shots)}）")
+                    builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height,
+                                                  settings.ref_image_size)
+                    if shot.reference:
+                        positive, latent = builder.reference_mode(shot.prompt, seg.frames, shot.media)
+                    else:
+                        positive, latent = builder.image_mode(shot.prompt, seg.frames, shot.media, None)
+                    report.add(f"{shot.name}条件编码完成，开始生成")
+                    if settings.low_vram:
+                        mm.unload_all_models()
+                        mm.soft_empty_cache()
+                    if shot.reference not in prepared:
+                        model = models[shot.reference]
+                        sigmas = _sigmas(model, settings.scheduler, settings.steps)
+                        if settings.tst and settings.tst_strength > 0:
+                            model, state = apply_tst(model, settings.tst_strength, sigmas.tolist())
+                            tst_states.append(state)
+                        prepared[shot.reference] = model, sigmas
+                    model, sigmas = prepared[shot.reference]
+                    done = _sample_segment(settings, report, model, sigmas, sampler, builder, positive,
+                                           latent["samples"], seg, shot, previous, seeds[index], learned_upscaler)
+                    shotcache.save(keys[index], *done)
+                    del builder, positive, latent
+                else:
+                    report.add(f"{shot.name}沿用上次的结果，没有重新生成")
+                video, audio = done
+                if pending is not None:
+                    frames = assemble.decode_segment(video_vae, pending[1], segments[pending[0]], video)
+                    writer.write(local - 1, frames)
+                    report.add(f"{shots[pending[0]].name}画面已保存")
+                    del frames
+                pending = index, video
+                previous = continuation.join_av(*done)
+                audio_latents.append(audio)
+                if settings.low_vram:
+                    mm.soft_empty_cache()
+            frames = assemble.decode_segment(video_vae, pending[1], segments[pending[0]])
+            writer.write(len(indices) - 1, frames)
+            del frames, pending, previous, done, video, audio
+            joined = assemble.join_audio_latents(audio_latents)
+            seconds = sum(segments[i].new_frames for i in indices) / timing.FPS
+            audio_out = assemble.fit_audio(vae_decode_audio(audio_vae, {"samples": joined}), seconds)
+            del joined, audio_latents
+            writer.finish(audio_out)
+            report.add(f"{label} 音视频已保存：{writer.folder}")
+        else:
+            report.add(f"{label} 沿用已保存的视频，没有重新生成或解码")
+        files.extend(writer.files)
+        audio_parts.append(audio_out)
+        if preview is None:
+            preview = writer.preview
+        if settings.low_vram:
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+    scales = [scale for state in tst_states for scale in state.scales]
+    if scales:
+        report.add(f"TST 平均放大系数 {sum(scales) / len(scales):.4f}，最大 {max(scales):.4f}")
+    audio_out = assemble.fit_audio({"waveform": torch.cat([part["waveform"] for part in audio_parts], dim=-1),
+                                    "sample_rate": audio_parts[0]["sample_rate"]}, assemble.total_seconds(segments))
+    report.add(f"完成：{len(files)} 个镜头，{segments[-1].end_frame} 帧（{segments[-1].end_frame / timing.FPS:.2f}s）")
+    return Result(images=preview, audio=audio_out, report=report.text(), clip_files=files)
 
 
 def _generate(settings: Settings, report: Reporter, models: dict, clip, video_vae, audio_vae, shots: list[Shot],
-              segments: list[timing.Segment], lock_source: dict | None, learned_upscaler, seeds: list[int],
-              clips, keys: list[str] | None = None) -> Result:
-    """``lock_source`` (image mode, one continuous run) guides every shot and replaces the soundtrack.
-
-    With ``keys``, a shot whose latents are already stored under its key is not sampled again.
-    """
+              segments: list[timing.Segment], lock_source: dict | None, learned_upscaler, seeds: list[int]) -> Result:
+    """``lock_source`` (image mode, one continuous run) guides every shot and replaces the soundtrack."""
     total_seconds = assemble.total_seconds(segments)
-    stored = [shotcache.load(key) for key in keys] if keys else [None] * len(shots)
 
-    # 1. conditioning for every shot that will be sampled (text encoder runs here, then can be unloaded)
+    # 1. conditioning for every shot (text encoder runs here, then can be unloaded)
     builder = ConditioningBuilder(clip, video_vae, audio_vae, settings.width, settings.height,
                                   settings.ref_image_size)
     conds = []
-    for seg, shot, done in zip(segments, shots, stored):
+    for seg, shot in zip(segments, shots):
         mm.throw_exception_if_processing_interrupted()
-        if done is not None:
-            conds.append(None)
-            continue
         if shot.reference:
             positive, latent = builder.reference_mode(shot.prompt, seg.frames, shot.media)
         else:
@@ -479,7 +615,7 @@ def _generate(settings: Settings, report: Reporter, models: dict, clip, video_va
     if use_tst:
         report.add(f"TST 防闪烁：强度 {settings.tst_strength:.2f}")
     prepared, tst_states = {}, []
-    for reference in sorted({shot.reference for shot, done in zip(shots, stored) if done is None}):
+    for reference in sorted({shot.reference for shot in shots}):
         model = models[reference]
         sigmas = _sigmas(model, settings.scheduler, settings.steps)
         if use_tst:
@@ -490,41 +626,14 @@ def _generate(settings: Settings, report: Reporter, models: dict, clip, video_va
     carry_audio = lock_source is None
     video_latents, audio_latents = [], []
     previous = None
-    for seg, shot, cond, done, seed in zip(segments, shots, conds, stored, seeds):
+    for seg, shot, (positive, target), seed in zip(segments, shots, conds, seeds):
         mm.throw_exception_if_processing_interrupted()
-        if done is not None:
-            video_latents.append(done[0])
-            audio_latents.append(done[1])
-            previous = continuation.join_av(*done)
-            report.add(f"{shot.name}沿用上次的结果，没有重新生成")
-            continue
-        positive, target = cond
         model, sigmas = prepared[shot.reference]
-        started = time.perf_counter()
-        out = None
-        if not seg.prefix_frames:
-            if settings.progressive:
-                out = _progressive_first_segment(model, builder, positive, seg, shot, settings, sampler, sigmas,
-                                                 seed, learned_upscaler, report)
-            if out is None:
-                out = _sample(model, positive, target, sigmas, sampler, seed)
-        else:
-            video_ctx, audio_ctx = continuation.tail_context(previous)
-            audio_ctx = audio_ctx if carry_audio else None
-            if settings.progressive_continuation:
-                out = _progressive_continuation(model, builder, positive, video_ctx, audio_ctx, seg, shot,
-                                                settings, sampler, sigmas, seed, learned_upscaler, report)
-            if out is None:
-                latent, mask = continuation.apply_prefix(target, video_ctx, audio_ctx)
-                out = _sample(model, positive, latent, sigmas, sampler, seed, mask=mask)
-            out = continuation.restore_prefix(out, video_ctx, audio_ctx)
-        video, audio = continuation.split_av(out)
-        video_latents.append(video.to("cpu", torch.float32))
-        audio_latents.append(audio.to("cpu", torch.float32))
-        previous = continuation.join_av(video_latents[-1], audio_latents[-1])
-        if keys:
-            shotcache.save(keys[seg.index], video_latents[-1], audio_latents[-1])
-        report.add(f"{shot.name}采样完成，用时 {time.perf_counter() - started:.1f}s")
+        video, audio = _sample_segment(settings, report, model, sigmas, sampler, builder, positive, target,
+                                       seg, shot, previous, seed, learned_upscaler, carry_audio)
+        video_latents.append(video)
+        audio_latents.append(audio)
+        previous = continuation.join_av(video, audio)
         if settings.low_vram:
             mm.soft_empty_cache()
     scales = [scale for state in tst_states for scale in state.scales]
@@ -542,7 +651,6 @@ def _generate(settings: Settings, report: Reporter, models: dict, clip, video_va
         audio_out = assemble.fit_audio(lock_source, total_seconds)
         report.add("输出音频：原音频（已对齐到视频时长）")
     else:
-        from comfy_extras.nodes_audio import vae_decode_audio
         parts = []
         for run_of in assemble.chains(segments):
             joined = assemble.join_audio_latents([audio_latents[i] for i in run_of])
@@ -552,4 +660,4 @@ def _generate(settings: Settings, report: Reporter, models: dict, clip, video_va
                                         "sample_rate": parts[0]["sample_rate"]}, total_seconds)
         report.add("输出音频：H3 生成")
     report.add(f"完成：{images.shape[0]} 帧（{images.shape[0] / timing.FPS:.2f}s）")
-    return Result(images=images, audio=audio_out, report=report.text(), clips=clips)
+    return Result(images=images, audio=audio_out, report=report.text())

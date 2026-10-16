@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -205,14 +206,25 @@ def test_the_ai_template_shows_cards_this_parser_reads():
         template = file.read()
     # the single-file director rules, with the section that describes this plugin's cards
     assert "ComfyUI-H3-Easy" in template and "接上一镜" in template
-    shots = shotlist.parse(template)
-    # the card skeleton and the worked example it shows are cards this parser reads
-    assert len(shots) >= 2 and shotlist.problems(shots) == []
-    example = max(shots, key=lambda shot: len(shot.prompt))
-    assert example.seconds and example.mode == shotlist.REFERENCE and len(example.pictures) == 2
+    # it shows the reply it asks for twice, each a whole list in one ```markdown box: the
+    # skeleton and the worked example. Both are lists this parser reads.
+    lists = re.findall(r"^```markdown\n(.*?)\n```$", template, re.S | re.M)
+    assert len(lists) == 2
+    for text in lists:
+        shots = shotlist.parse(text)
+        assert len(shots) == 1 and shotlist.problems(shots) == [] and shots[0].aspect == (16, 9)
+        # the files a card names are the ones the list's 素材 table tells the user to save
+        assert [ref.file for ref in shots[0].pictures] == re.findall(r"^`([^`]+)` ", text, re.M)
+    example = shotlist.parse(lists[1])[0]
+    assert example.seconds == 15 and example.mode == shotlist.REFERENCE and not example.continues
     assert shotlist.unlisted_tags(example) == []
+    # the plan fields before the prompt and the notes after it stay out of the prompt
     assert example.prompt.startswith("subject_definitions:") and example.prompt.endswith("N/A")
-    assert len(example.prompt) < 7000
+    assert len(example.prompt) < 7000 and "已核对" not in example.prompt
+    # sent the way the template asks: picture prompts in boxes of their own, the list, one sentence
+    reply = ("**沈砚.png**　比例 3:2\n```text\none actor in full costume\n```\n\n```markdown\n" + lists[1]
+             + "\n```\n\n复制上面整个清单框。")
+    assert shotlist.parse(reply) == [example]
 
 
 ONE_BOX = """# 《账本》出片清单
@@ -278,3 +290,61 @@ def test_a_list_in_one_code_block_is_read_however_it_was_copied():
     nested = ONE_BOX.replace("H3 Prompt:\n", "H3 Prompt:\n```text\n").replace("\n注意事项：", "\n```\n注意事项：")
     check("```markdown\n" + nested + "\n```")
     check("```text\n" + nested + "\n```")
+
+
+def test_director_notes_between_fields_stay_out_of_the_card():
+    text = ONE_BOX.split("SHOT 02")[0].replace(
+        "接上一镜: 硬切\n",
+        "接上一镜: 硬切\n分段：\n- 0.0秒起 · 继续翻账本\n已核对：语速：常\n声线绑定：\n- 沈砚 (S1)：`青年男性`\n"
+        "开场状态：沈砚坐画左。\n结束状态：账本已翻开。\n人物认知：他看见账目。\n观众信息：账本有异。\n切镜：固定机位。\n")
+    shot = shotlist.parse(text)[0]
+    assert shot == shotlist.parse(ONE_BOX)[0]  # the prompt is sent as written
+    assert not shot.continues  # 「继续」 in the notes is not 接上一镜：续写
+
+
+def test_previous_frame_reference_is_explicit_and_validated():
+    text = ONE_BOX.replace("接上一镜: 续写", "接上一镜: 硬切\n承接画面：上一镜尾帧参考")
+    shots = shotlist.parse(text)
+    assert not shots[0].frame_reference and shots[1].frame_reference
+    assert shotlist.problems(shots) == []
+    assert any("第一镜" in issue for issue in shotlist.problems(shots[1:]))
+    bad = text.replace("接上一镜: 硬切\n承接画面：上一镜尾帧参考", "接上一镜: 续写\n承接画面：上一镜尾帧参考")
+    assert any("续写" in issue for issue in shotlist.problems(shotlist.parse(bad)))
+    bad = text.replace("Mode: Ref2VA", "Mode: I2VA")
+    assert any("参考模式" in issue for issue in shotlist.problems(shotlist.parse(bad)))
+
+
+def test_frame_reference_reserves_a_picture_slot_without_renumbering_user_assets():
+    text = ONE_BOX.replace("接上一镜: 续写", "接上一镜: 硬切\n承接画面：上一镜尾帧参考")
+    text = text.replace("<Picture 1> 沈砚 `沈砚.png`\n接上一镜", "\n".join(
+        f"<Picture {n}> 角色{n} `角色{n}.png`" for n in range(1, 10)) + "\n接上一镜")
+    assert any("留出" in issue for issue in shotlist.problems(shotlist.parse(text)))
+
+
+def test_a_list_copied_out_of_a_rich_text_view_is_cleaned():
+    """A real copy (2026-10-16): Markdown punctuation escaped, every line break made four."""
+    clean = ("**画幅：** 16:9\n\n素材：\n`老子_老年.png` 角色：老子\n\n"
+             "SHOT 01\nDuration: 6s\nMode: Ref2VA\nReferences:\n<Picture 1> 老子（老年） `老子_老年.png`\n"
+             "<Picture 2> 尹喜 `尹喜.png`\n接上一镜: 硬切\n导演意图：开场。\n分段：\n- 0.0秒起 · 中景\n"
+             "H3 Prompt:\nsubject_definitions:\n<Subject 1> is the old man in <Picture 1>.\n\n"
+             "summary:\n[reference generation] He stops.\n\n"
+             "detailed_description:\n[Shot 1] A medium two-shot.\n[Shot 2] At 00:03.500, the camera cuts to him.\n\n"
+             "non_diegetic_music:\nN/A\n注意事项：无\n\n"
+             "SHOT 02\nDuration: 5s\nMode: Ref2VA\nReferences:\n<Picture 1> 老子（老年） `老子_老年.png`\n"
+             "接上一镜: 硬切\nH3 Prompt:\nsubject_definitions:\n<Subject 1> is the old man in <Picture 1>.\n\n"
+             "non_diegetic_music:\nN/A\n注意事项：无")
+    copied = clean
+    for mark in "\\_[*#-":
+        copied = copied.replace(mark, "\\" + mark)
+    copied = copied.replace("\n", "\n\n\n\n")
+    assert "subject\\_definitions" in copied and "\\[Shot 2]" in copied and "`老子\\_老年.png`" in copied
+
+    expected = shotlist.parse(clean)
+    got = shotlist.parse(copied)
+    assert len(got) == 2 and got == expected
+    assert got[0].prompt.startswith("subject_definitions:\n<Subject 1> is the old man in <Picture 1>.\n\nsummary:\n")
+    assert "[Shot 2] At 00:03.500" in got[0].prompt and "\\" not in got[0].prompt
+    assert [ref.file for ref in got[0].pictures] == ["老子_老年.png", "尹喜.png"]
+    assert got[0].aspect == (16, 9)
+    # an ordinary list keeps its blank lines and a literal backslash before a letter
+    assert shotlist.parse(clean.replace("尹喜.png`", "尹喜.png` C:\\x"))[0].prompt == expected[0].prompt

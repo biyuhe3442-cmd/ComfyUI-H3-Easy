@@ -155,6 +155,59 @@ def test_single_segment_progressive(env):
     assert (1, 24, 27, 16, 22) in vae.decodes
 
 
+def test_progressive_handoff_preserves_noisy_audio(env, monkeypatch):
+    import comfy.samplers
+    import comfy.utils
+    from h3easy.media import Media
+
+    pipeline = env["pipeline"]
+    settings = _settings(pipeline, progressive=True, upscale_method=pipeline.UPSCALE_LATENT)
+    sampler = comfy.samplers.sampler_object("euler")
+    original = sampler.sampler_function
+    sampled_audio = []
+
+    def trace(model, x, sigmas, **kwargs):
+        shapes = model.inner_model.inner_model.latent_shapes
+        if sampled_audio:
+            # Compare inside the real sampler, before Core's inverse/forward scaling pair.
+            torch.testing.assert_close(comfy.utils.unpack_latents(x, shapes)[1], sampled_audio[0])
+        out = original(model, x, sigmas, **kwargs)
+        sampled_audio.append(comfy.utils.unpack_latents(out, shapes)[1].clone())
+        return out
+
+    sampler.sampler_function = trace
+    monkeypatch.setattr(comfy.samplers, "sampler_object", lambda name: sampler)
+    pipeline.run(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(), Media())
+    assert len(sampled_audio) == 2
+
+
+@pytest.mark.parametrize("low_vram", [False, True])
+def test_learned_upscaler_releases_sampling_models_in_low_vram_mode(env, monkeypatch, low_vram):
+    from h3easy.media import Media
+
+    pipeline = env["pipeline"]
+    events = []
+    sample = pipeline._sample
+
+    def record_sample(*args, **kwargs):
+        events.append("sample")
+        return sample(*args, **kwargs)
+
+    class Upscaler:
+        def upscale_clean_video(self, video, *, target_h, target_w):
+            assert events[-1] == ("unload" if low_vram else "sample")
+            events.append("upscale")
+            return torch.nn.functional.interpolate(video, size=(video.shape[2], target_h, target_w),
+                                                   mode="trilinear", align_corners=False)
+
+    monkeypatch.setattr(pipeline, "_sample", record_sample)
+    monkeypatch.setattr(pipeline.mm, "unload_all_models", lambda: events.append("unload"))
+    settings = _settings(pipeline, segments=2, low_vram=low_vram, progressive=True,
+                         progressive_continuation=True, upscale_method=pipeline.UPSCALE_LATENT)
+    pipeline.run(settings, env["model"], FakeClip(), FakeVideoVAE(), FakeAudioVAE(), Media(), Upscaler())
+    assert events.count("upscale") == 2
+
+
 def test_aspect_warning_for_portrait_first_frame(env):
     pipeline = env["pipeline"]
     from h3easy.media import Media
@@ -628,13 +681,13 @@ def test_shot_list_runs_each_card_with_its_own_media(env, tmp_path, monkeypatch)
         ("<Picture 1> walks onto <Picture 2>.", [(64, 64), (64, 128)], 0, 90),
         ("<Picture 1> turns around and speaks in the voice of <Audio 1>.", [(128, 64)], 1, 90),
     ]
-    # 3.75 s, then 51 new frames continuing it, then a cut to a 3.75 s first-frame shot
-    assert images.shape == (90 + 51 + 90, 320, 512, 3)
-    assert torch.isfinite(images).all()
-    assert [clip.get_components().images.shape[0] for clip in clips] == [90, 51, 90]
+    # 3.75 s, then 51 new frames continuing it, then a cut to a 3.75 s first-frame shot; each shot is a
+    # file of its own and the whole video is joined from them, so 画面 is only the first frame
+    assert images.shape == (1, 320, 512, 3) and torch.isfinite(images).all()
+    assert [clip.get_frame_count() for clip in clips] == [90, 51, 90]
     assert audio["waveform"].shape[-1] == round(231 / 24 * 32000)
-    assert clips[1].get_components().audio["waveform"].shape[-1] == 51 * 32000 // 24
-    assert video.get_components().images.shape[0] == 231
+    assert clips[1].get_duration() == pytest.approx(51 / 24, abs=0.002)
+    assert video.get_frame_count() == 231 and video.get_duration() == pytest.approx(231 / 24, abs=0.002)
     # only the shot that is continued is decoded with the next one's right context
     decodes = [shape[2] for shape in kwargs["video_vae"].decodes if shape[3] == 20]
     assert decodes == [27 + 5, 27, 27]
@@ -648,7 +701,7 @@ def test_shot_list_runs_each_card_with_its_own_media(env, tmp_path, monkeypatch)
     assert "清单写的画幅是 9:16，节点设的输出是 512×320" in report
     # every shot that starts with a cut gets the low-resolution start
     assert "镜头 1 渐进加速：" in report and "镜头 3 渐进加速：" in report and "镜头 2 渐进加速" not in report
-    assert "镜头 2 采样完成" in report and "镜头 3 解码完成" in report
+    assert "镜头 2 采样完成" in report and "完整视频已保存" in report
 
 
 def test_shot_list_problems_are_reported_before_any_work(env, tmp_path):
@@ -703,12 +756,15 @@ def test_shot_list_files_are_found_by_name(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _own_user_folder(tmp_path):
-    """Shot lists keep their finished shots under the user folder: stay out of the real one."""
+    """Shot lists keep their finished shots under the user folder and their videos under the
+    output folder: stay out of the real ones."""
     import folder_paths
-    old = folder_paths.get_user_directory()
+    old = folder_paths.get_user_directory(), folder_paths.get_output_directory()
     folder_paths.set_user_directory(str(tmp_path / "user"))
+    folder_paths.set_output_directory(str(tmp_path / "output"))
     yield
-    folder_paths.set_user_directory(old)
+    folder_paths.set_user_directory(old[0])
+    folder_paths.set_output_directory(old[1])
 
 
 def test_shot_list_only_samples_what_changed(env, tmp_path, monkeypatch):
@@ -731,25 +787,25 @@ def test_shot_list_only_samples_what_changed(env, tmp_path, monkeypatch):
     def run(**overrides):
         sampled.clear()
         out = H3EasyGenerate.execute(**_shot_list_kwargs(env, progressive=False, **overrides)).args
-        return out[1], out[3], len(sampled)
+        return [clip.get_stream_source() for clip in out[4]], out[3], len(sampled)
 
     try:
         first, report, count = run()
-        assert count == 3 and "沿用上次的结果" not in report
+        assert count == 3 and "沿用" not in report
         # a shot list does not go by the node's seed: the second run has nothing left to sample
         again, report, count = run(seed=99)
-        assert count == 0 and report.count("沿用上次的结果") == 3
-        assert torch.equal(again, first)
+        assert count == 0 and report.count("沿用已保存的视频") == 2  # shots 1–2 and shot 3
+        assert again == first
         # re-roll the last shot: the other two stay exactly as they were
         third, report, count = run(shot_versions="3:2")
-        assert count == 1 and "镜头 3 采样完成" in report and report.count("沿用上次的结果") == 2
-        assert torch.equal(third[:141], first[:141]) and not torch.equal(third[141:], first[141:])
+        assert count == 1 and "镜头 3 采样完成" in report and "镜头 1 至 镜头 2 沿用已保存的视频" in report
+        assert third[:2] == first[:2] and third[2] != first[2]
         # re-rolling a shot also redoes the shot that continues it, but not the one after the cut
         _, report, count = run(shot_versions="1:2")
-        assert count == 2 and "镜头 3 沿用上次的结果" in report
+        assert count == 2 and "镜头 3 沿用已保存的视频" in report
         # back to the first takes: they are all still there
         back, _, count = run()
-        assert count == 0 and torch.equal(back, first)
+        assert count == 0 and back == first
         # a changed prompt or a changed file redoes just that shot
         assert run(prompt=SHOT_SHEET.replace("looks up", "looks down"))[2] == 1
         os.utime(tmp_path / "窗边.png", (5, 5))
@@ -807,7 +863,7 @@ def test_stopped_shot_list_resumes_where_it_stopped(env, tmp_path, monkeypatch):
         folder_paths.set_input_directory(old)
     # the two finished shots were kept; only the third was sampled the second time
     assert len(calls) == 4
-    assert "镜头 1 沿用上次的结果" in report and "镜头 2 沿用上次的结果" in report and "镜头 3 采样完成" in report
+    assert "镜头 1 至 镜头 2 沿用已保存的视频" in report and "镜头 3 采样完成" in report
 
 
 def test_shot_list_notices_changed_workflow_settings(env, tmp_path, monkeypatch):
@@ -869,3 +925,363 @@ def test_shot_list_notices_changed_workflow_settings(env, tmp_path, monkeypatch)
         assert run() == 0
     finally:
         folder_paths.set_input_directory(old)
+
+
+def test_shot_list_audio_labels_skip_video_soundtracks(env, monkeypatch):
+    from comfy_extras import nodes_minimax_h3 as core_h3
+    from h3easy import shotlist
+    from h3easy.media import Media
+
+    text = ("SHOT 01\nDuration: 3.5s\nMode: Ref2VA\nReferences:\n"
+            "<Video 1> `silent.mp4`\n<Video 2> `speaking.mp4`\n<Audio 1> `voice.wav`\n"
+            "H3 Prompt:\nSpeak in the voice of <Audio 1> beside <Video 2>.")
+    media = Media(videos=[torch.rand(22, 32, 32, 3), torch.rand(22, 32, 32, 3)],
+                  video_audios=[None, _audio(1.0)], audios=[_audio(1.0)])
+    seen = []
+    original = core_h3.MiniMaxH3ReferenceToVideo.execute
+
+    def spy(**kwargs):
+        seen.append(kwargs["prompt"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(core_h3.MiniMaxH3ReferenceToVideo, "execute", spy)
+    settings = _settings(env["pipeline"], progressive=False)
+    result = env["pipeline"].run_shot_list(settings, {True: env["model"]}, FakeClip(), FakeVideoVAE(),
+                                           FakeAudioVAE(), shotlist.parse(text), [media])
+    assert seen == ["Speak in the voice of <Audio 2> beside <Video 2>."]
+    assert len(result.clip_files) == 1 and torch.isfinite(result.images).all()
+
+
+def test_replacing_model_and_media_files_invalidates_signatures(tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy.media import file_signature
+    from h3easy.nodes import upstream
+
+    monkeypatch.setitem(folder_paths.folder_names_and_paths, "diffusion_models", ([str(tmp_path)], {".safetensors"}))
+    weight = tmp_path / "model.safetensors"
+    weight.write_bytes(b"old")
+    graph = {"2": {"class_type": "UNETLoader", "inputs": {"unet_name": weight.name}},
+             "9": {"class_type": "H3EasyGenerate", "inputs": {"image_model": ["2", 0]}}}
+    before = upstream(graph, "9", ["image_model"])
+    modified = weight.stat().st_mtime_ns
+    weight.write_bytes(b"new weights")
+    os.utime(weight, ns=(modified, modified))
+    assert upstream(graph, "9", ["image_model"]) != before
+    assert upstream(graph, "9", ["image_model"]) == upstream(graph, "9", ["image_model"])
+
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    image = tmp_path / "same.png"
+    image.write_bytes(b"old")
+    before = file_signature([image.name])
+    modified = image.stat().st_mtime_ns
+    image.write_bytes(b"new image")
+    os.utime(image, ns=(modified, modified))
+    assert file_signature([image.name]) != before
+
+
+def test_decode_writes_directly_to_final_float_tensor(monkeypatch):
+    from h3easy import assemble, timing
+
+    segments = timing.plan_shots([(4, False), (4, False)])
+    latents = [torch.full((1, 24, seg.video_t, 1, 1), value)
+               for seg, value in zip(segments, (0.123456789, 0.7654321))]
+
+    class VAE:
+        def decode(self, latent):
+            return latent.new_full((timing.frames_for_slots(latent.shape[2]), 1, 1, 3), latent.flatten()[0])
+
+    def no_concatenation(*args, **kwargs):
+        raise AssertionError("Hard-cut decoding must not allocate a concatenated copy")
+
+    monkeypatch.setattr(torch, "cat", no_concatenation)
+    images = assemble.decode_video(VAE(), latents, segments)
+    assert images.dtype == torch.float32 and images.device.type == "cpu"
+    assert images.shape == (sum(seg.frames for seg in segments), 1, 1, 3)
+    assert torch.equal(images[:segments[0].frames], torch.full_like(images[:segments[0].frames], 0.123456789))
+    assert torch.equal(images[segments[0].frames:], torch.full_like(images[segments[0].frames:], 0.7654321))
+
+
+def _fast_shot_sample(model, positive, latent, sigmas, sampler, seed, **kwargs):
+    from h3easy.continuation import join_av, split_av
+    video, audio = split_av(latent)
+    generator = torch.Generator().manual_seed(seed)
+    return join_av(torch.randn(video.shape, generator=generator), torch.randn(audio.shape, generator=generator))
+
+
+def test_disk_shots_preserve_frames_audio_and_continuation(env, tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy import pipeline
+    from h3easy.nodes import H3EasyGenerate
+
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    _shot_list_inputs(tmp_path)
+    kwargs = _shot_list_kwargs(env, width=256, height=256, steps=2, progressive=False)
+    # Real tiny Core DiT + real codecs: what is written to disk is what the latents decode to.
+    kwargs["video_vae"] = vae = FakeVideoVAE()
+    video, preview, audio, report, clips = H3EasyGenerate.execute(**kwargs).args
+    assert preview.shape == (1, 256, 256, 3)
+    assert [item.get_frame_count() for item in clips] == [90, 51, 90]
+    assert video.get_frame_count() == 231
+    assert video.get_duration() == pytest.approx(231 / 24, abs=0.002)
+    assert audio["waveform"].shape[-1] == round(231 / 24 * 32000)
+    assert torch.mean(torch.abs(video.get_components().images[:1] - preview)).item() < 0.03
+    assert [shape[2] for shape in vae.decodes] == [32, 27, 27]
+    assert "完整视频已保存" in report
+
+    # Completed MP4s are reused without sampling or decoding, even after the latent cache is pruned.
+    for path in (tmp_path / "user" / "h3easy_shots").glob("*.safetensors"):
+        path.unlink()
+    monkeypatch.setattr(pipeline, "_sample", lambda *args, **kwargs: pytest.fail("completed shot sampled again"))
+    vae.decodes.clear()
+    again = H3EasyGenerate.execute(**kwargs).args
+    assert not vae.decodes
+    assert torch.equal(again[1], preview) and torch.equal(again[2]["waveform"], audio["waveform"])
+    assert "沿用已保存的视频" in again[3]
+
+
+def test_hard_cuts_receive_the_previous_last_frame_and_reroll_dependents(env, tmp_path, monkeypatch):
+    import folder_paths
+    from comfy_extras import nodes_minimax_h3 as core_h3
+    from h3easy import pipeline, video_output
+    from h3easy.nodes import H3EasyGenerate
+
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    monkeypatch.setattr(pipeline, "_sample", _fast_shot_sample)
+    _shot_list_inputs(tmp_path)
+    calls = []
+    original = core_h3.MiniMaxH3ReferenceToVideo.execute
+
+    def record(**kwargs):
+        images = list(kwargs["ref_images"].values())
+        calls.append((kwargs["prompt"], [image.clone() for image in images]))
+        return original(**kwargs)
+
+    monkeypatch.setattr(core_h3.MiniMaxH3ReferenceToVideo, "execute", record)
+    prompt = "\n".join(
+        f"SHOT {n:02}\nDuration: 4s\nMode: Ref2VA\nReferences:\n"
+        "<Picture 1> 沈烬 `沈烬.png`\n<Picture 2> 断月台 `断月台.png`\n接上一镜：硬切\n"
+        + ("承接画面：上一镜尾帧参考\n" if n in (2, 3) else "承接画面：无\n")
+        + "H3 Prompt:\ndetailed_description:\n[Shot 1] The man listens without speaking.\n注意事项：无\n"
+        for n in range(1, 5))
+    kwargs = _shot_list_kwargs(env, prompt=prompt, width=256, height=256, progressive=False)
+    result = H3EasyGenerate.execute(**kwargs).args
+    files = [clip.get_stream_source() for clip in result[4]]
+    assert [len(images) for _, images in calls] == [2, 3, 3, 2]
+    assert calls[0][0] == "detailed_description:\n[Shot 1] The man listens without speaking."
+    assert "<Picture 3>" in calls[1][0] and "preceding shot" in calls[1][0]
+    torch.testing.assert_close(calls[1][1][-1], video_output.last_frame(files[0]))
+    torch.testing.assert_close(calls[2][1][-1], video_output.last_frame(files[1]))
+    assert "上一镜尾帧" in result[3]
+    # A fully cached run needs neither sampling nor reference-frame decoding.
+    calls.clear()
+    read_frame = video_output.last_frame
+    monkeypatch.setattr(video_output, "last_frame", lambda path: pytest.fail("cached run read a frame"))
+    H3EasyGenerate.execute(**kwargs)
+    assert not calls
+    monkeypatch.setattr(video_output, "last_frame", read_frame)
+    kwargs["shot_versions"] = "1:2"
+    changed = H3EasyGenerate.execute(**kwargs).args
+    changed_files = [clip.get_stream_source() for clip in changed[4]]
+    assert len(calls) == 3
+    assert all(old != new for old, new in zip(files[:3], changed_files[:3]))
+    assert files[3] == changed_files[3]
+
+
+def test_previous_frame_reader_returns_the_last_frame_without_expanding_the_clip(tmp_path, monkeypatch):
+    from fractions import Fraction
+    from comfy_api.latest import InputImpl, Types
+    from h3easy import video_output
+
+    images = torch.zeros(120, 32, 32, 3)
+    images[-12:, ..., 0] = 0.9
+    path = str(tmp_path / "previous.mp4")
+    InputImpl.VideoFromComponents(Types.VideoComponents(images=images, frame_rate=Fraction(24))).save_to(
+        path, format=Types.VideoContainer.MP4, codec=Types.VideoCodec.H264)
+    expected = InputImpl.VideoFromFile(path).get_components().images[-1:]
+    monkeypatch.setattr(InputImpl.VideoFromFile, "get_components", lambda *args: pytest.fail("expanded video"))
+    last = video_output.last_frame(path)
+    assert last.shape == (1, 32, 32, 3)
+    torch.testing.assert_close(last, expected, atol=1 / 255, rtol=0)  # RGB24 rounds to an 8-bit level
+    assert last[..., 0].mean() > 0.8
+
+
+def test_disk_export_resume_and_reroll(env, tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy import pipeline
+    from h3easy.nodes import H3EasyGenerate
+
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    _shot_list_inputs(tmp_path)
+    sampled = []
+
+    def sample(*args, **kwargs):
+        sampled.append(args[5])
+        if len(sampled) == 3:
+            raise RuntimeError("interrupted before third shot")
+        return _fast_shot_sample(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_sample", sample)
+    kwargs = _shot_list_kwargs(env, width=256, height=256, steps=2, progressive=False)
+    with pytest.raises(RuntimeError, match="interrupted before third"):
+        H3EasyGenerate.execute(**kwargs)
+    assert len(list((tmp_path / "output").rglob("shot_*.mp4"))) == 2
+    result = H3EasyGenerate.execute(**kwargs).args
+    assert len(sampled) == 4 and result[0].get_frame_count() == 231
+    assert "没有重新生成或解码" in result[3]
+
+    first_files = [item.get_stream_source() for item in result[4]]
+    # Rerolling a continuation reuses its predecessor's latent, but re-decodes the predecessor's tail.
+    sampled.clear()
+    kwargs["shot_versions"] = "2:2"
+    changed = H3EasyGenerate.execute(**kwargs).args
+    assert len(sampled) == 1
+    changed_files = [item.get_stream_source() for item in changed[4]]
+    assert changed_files[0] != first_files[0] and changed_files[1] != first_files[1]
+    assert changed_files[2] == first_files[2]
+    assert changed[0].get_frame_count() == 231
+
+
+def test_106_disk_shots_start_immediately_and_release_each_picture_batch(env, tmp_path, monkeypatch):
+    import weakref
+    from h3easy import assemble, pipeline, shotlist, video_output
+    from h3easy.media import Media
+
+    monkeypatch.setattr(pipeline, "_sample", _fast_shot_sample)
+    monkeypatch.setattr(pipeline, "snap_size", int)
+    monkeypatch.setattr(assemble, "decode_video", lambda *args, **kwargs: pytest.fail("whole chapter decoded"))
+    clip, previous_frames, written = FakeClip(), [], []
+
+    class Writer:
+        def __init__(self, keys, segments):
+            self.folder = "test"
+            self.files = [keys[0] + ".mp4"]
+
+        def load(self):
+            return None
+
+        def write(self, index, images):
+            assert clip.calls == len(written) + 1  # no all-chapter conditioning phase
+            assert all(ref() is None for ref in previous_frames)
+            assert images.shape == (192, 64, 64, 3)
+            previous_frames.append(weakref.ref(images))
+            written.append(index)
+            self.preview = images[:1].clone()
+
+        def finish(self, audio):
+            pass
+
+    class SmallAudioVAE:
+        audio_sample_rate = 240
+
+        def decode(self, latent):
+            return torch.zeros(1, latent.shape[-1] * 6, 2)
+
+    monkeypatch.setattr(video_output, "ShotRun", Writer)
+    text = "\n".join(f"SHOT {n:02}\nDuration: 8s\nMode: I2VA\nH3 Prompt:\na cat" for n in range(1, 107))
+    result = pipeline.run_shot_list(_settings(pipeline, progressive=False, width=64, height=64),
+                                    {False: env["model"]}, clip, FakeVideoVAE(), SmallAudioVAE(),
+                                    shotlist.parse(text), [Media() for _ in range(106)])
+    assert len(written) == len(result.clip_files) == 106
+    assert all(ref() is None for ref in previous_frames)
+    assert result.images.shape == (1, 64, 64, 3)
+    assert result.audio["waveform"].shape[-1] == 106 * 8 * 240
+
+
+def test_disk_join_and_save_never_materialize_all_frames(tmp_path, monkeypatch):
+    import folder_paths
+    from comfy_api.latest import InputImpl, Types
+    from fractions import Fraction
+    from h3easy import timing, video_output
+
+    monkeypatch.setattr(folder_paths, "get_output_directory", lambda: str(tmp_path))
+    segments = timing.plan_shots([(4, False), (4, False)])
+    writer = video_output.ShotRun(["a", "b"], segments)
+    for index, segment in enumerate(segments):
+        writer.write(index, torch.full((segment.new_frames, 32, 32, 3), 0.2 + index * 0.5))
+    total = segments[-1].end_frame
+    audio = {"waveform": torch.zeros(1, 2, round(total / 24 * 32000)), "sample_rate": 32000}
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("file-backed video was expanded into all its frames")
+
+    monkeypatch.setattr(InputImpl.VideoFromFile, "get_components", forbidden)
+    monkeypatch.setattr(InputImpl.VideoFromList, "get_components", forbidden)
+    writer.finish(audio)
+    joined = InputImpl.VideoFromFile(video_output.join(writer.files, audio))
+    exported = tmp_path / "saved.mp4"
+    joined.save_to(str(exported), format=Types.VideoContainer.MP4)
+    assert joined.get_frame_count() == total
+    assert InputImpl.VideoFromFile(str(exported)).get_frame_rate() == Fraction(24)
+    assert exported.is_file()
+
+
+def test_interrupted_video_export_cannot_mark_a_run_complete(tmp_path, monkeypatch):
+    from pathlib import Path
+    import folder_paths
+    from h3easy import timing, video_output
+
+    monkeypatch.setattr(folder_paths, "get_output_directory", lambda: str(tmp_path))
+    segments = timing.plan_shots([(4, False), (4, True)])
+    writer = video_output.ShotRun(["a", "b"], segments)
+    images = [torch.full((seg.new_frames, 32, 32, 3), 0.4) for seg in segments]
+    for index, frames in enumerate(images):
+        writer.write(index, frames)
+    audio = {"waveform": torch.zeros(1, 2, round(segments[-1].end_frame / 24 * 32000)), "sample_rate": 32000}
+    original = video_output._save
+
+    def interrupt(video, path):
+        if path == writer.files[1]:
+            Path(path + ".part").write_bytes(b"interrupted")
+            raise RuntimeError("export interrupted")
+        original(video, path)
+
+    monkeypatch.setattr(video_output, "_save", interrupt)
+    with pytest.raises(RuntimeError, match="export interrupted"):
+        writer.finish(audio)
+    assert not Path(writer.metadata).exists()
+    assert Path(writer.files[0]).is_file() and not Path(writer.files[1]).exists()
+    resumed = video_output.ShotRun(["a", "b"], segments)
+    assert resumed.load() is None
+    monkeypatch.setattr(video_output, "_save", original)
+    for index, frames in enumerate(images):
+        resumed.write(index, frames)
+    resumed.finish(audio)
+    assert torch.equal(resumed.load()["waveform"], audio["waveform"])
+    assert all(Path(path).is_file() for path in resumed.files)
+    assert not list(Path(writer.folder).glob("*.part"))
+
+
+def test_disk_preview_accepts_noncontiguous_vae_frames(tmp_path, monkeypatch):
+    import folder_paths
+    from comfy_api.latest import InputImpl
+    from h3easy import timing, video_output
+
+    monkeypatch.setattr(folder_paths, "get_output_directory", lambda: str(tmp_path))
+    segments = timing.plan_shots([(4, False)])
+    images = torch.rand(segments[0].new_frames, 3, 32, 32).movedim(1, -1)
+    assert not images.is_contiguous()
+    audio = {"waveform": torch.zeros(1, 2, round(segments[0].new_frames / 24 * 32000)), "sample_rate": 32000}
+    writer = video_output.ShotRun(["noncontiguous-vae"], segments)
+    writer.write(0, images)
+    writer.finish(audio)
+    restored = video_output.ShotRun(["noncontiguous-vae"], segments)
+    assert torch.equal(restored.load()["waveform"], audio["waveform"])
+    assert restored.preview.is_contiguous()
+    assert torch.equal(restored.preview, images[:1].mul(255).clamp(0, 255).byte().float().div(255))
+    assert InputImpl.VideoFromFile(writer.files[0]).get_frame_count() == segments[0].new_frames
+
+
+def test_disk_shots_keep_progressive_tst_and_low_vram_modes(env, tmp_path, monkeypatch):
+    import folder_paths
+    from h3easy.nodes import H3EasyGenerate
+
+    monkeypatch.setattr(folder_paths, "get_input_directory", lambda: str(tmp_path))
+    _shot_list_inputs(tmp_path)
+    kwargs = _shot_list_kwargs(env, progressive=True, progressive_continuation=True, tst=True, low_vram=True)
+    video, preview, audio, report, clips = H3EasyGenerate.execute(**kwargs).args
+    assert video.get_frame_count() == 231
+    assert [item.get_frame_count() for item in clips] == [90, 51, 90]
+    assert preview.shape == (1, 320, 512, 3) and torch.isfinite(preview).all()
+    assert torch.isfinite(audio["waveform"]).all()
+    assert "镜头 1 渐进加速" in report and "镜头 2 渐进加速（实验）" in report
+    assert "TST 平均放大系数" in report

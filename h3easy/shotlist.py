@@ -22,8 +22,8 @@ One card is one H3 generation::
     ...
     ```
 
-Tags are numbered inside each card, in the order its files are handed to H3, so
-the prompt is used exactly as written. A reference names its file in backticks;
+Tags are numbered inside each card, in the order its files are handed to H3,
+so the prompt is used as written. A reference names its file in backticks;
 without one, the words after the tag are taken as the file name without its
 extension. Everything else in the text (the other steps of the 出片清单, 导演意图,
 注意事项) is skipped.
@@ -31,6 +31,7 @@ extension. Everything else in the text (the other steps of the 出片清单, 导
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -38,7 +39,8 @@ from dataclasses import dataclass
 _HEADER = re.compile(r"^[\s#>*_-]*SHOT\s*(\d+)\s*(?:[*_:：（(].*)?$", re.IGNORECASE)
 _PROMPT_LABEL = re.compile(r"^[\s#>*_-]*H3\s*Prompt[\s*_]*[:：]", re.IGNORECASE | re.MULTILINE)
 _LABEL = re.compile(
-    r"^[\s#>*_-]*(Duration|Mode|Aspect|References|H3\s*Prompt|接上一镜|导演意图|注意事项)[\s*_]*[:：][\s*_]*(.*)$",
+    r"^[\s#>*_-]*(Duration|Mode|Aspect|References|H3\s*Prompt|接上一镜|承接画面|导演意图|分段|已核对|"
+    r"声线绑定|开场状态|结束状态|人物认知|观众信息|切镜|注意事项)[\s*_]*[:：][\s*_]*(.*)$",
     re.IGNORECASE)
 _FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 # a chat AI may wrap its whole reply in one outer fence: four or more backticks, or ```markdown
@@ -73,6 +75,7 @@ class Shot:
     prompt: str
     continues: bool                # starts on the previous shot's last frames instead of a cut
     aspect: tuple[int, int] | None
+    frame_reference: bool = False  # 承接画面：上一镜尾帧 — the previous shot's last frame joins its pictures
 
 
 def _mode(text: str) -> str | None:
@@ -140,12 +143,43 @@ def _card(number: int, lines: list[str], sheet_aspect) -> Shot:
         prompt="\n".join(fenced["h3prompt"]).strip() if "h3prompt" in fenced else text("h3prompt"),
         continues="续" in text("接上一镜"),
         aspect=(int(ratio.group(1)), int(ratio.group(2))) if ratio else sheet_aspect,
+        frame_reference=text("承接画面") in {"上一镜尾帧", "上一镜尾帧参考"},
     )
+
+
+def add_visual_instructions(prompt: str, instructions: str) -> str:
+    """Keep visual directions inside the description rather than adding a new H3 section."""
+    description = re.search(r"(?mi)^(?:detailed_description|integrated_multimodal_description)\s*:", prompt)
+    if description:
+        return prompt[:description.end()] + "\n" + instructions + "\n" + prompt[description.end():].lstrip("\n")
+    sound = re.search(r"(?mi)^(?:overall_soundscape|non_diegetic_music)\s*:", prompt)
+    if sound:
+        return prompt[:sound.start()] + "detailed_description:\n" + instructions + "\n\n" + prompt[sound.start():]
+    return instructions + "\n" + prompt
+
+
+# a Markdown backslash escape: a backslash before any ASCII punctuation
+_ESCAPED = re.compile(r"\\([!-/:-@\[-`{-~])")
+
+
+def _clean(text: str) -> str:
+    """Undo what copying a list out of a rich-text view does to it.
+
+    Such a copy escapes Markdown punctuation and multiplies every line break (one break became
+    four, a blank line eight). H3 must get ``subject_definitions`` and ``[Shot 2]``, not
+    ``subject\\_definitions`` and ``\\[Shot 2]``, and ``老子\\_老年.png`` must stay ``老子_老年.png``.
+    """
+    text = text.replace("\r\n", "\n")
+    runs = [len(run) for run in re.findall(r"\n+", text)]
+    step = math.gcd(*runs) if len(runs) > 8 else 1
+    if step > 1:
+        text = re.sub(r"\n+", lambda run: "\n" * (len(run.group(0)) // step), text)
+    return _ESCAPED.sub(r"\1", text)
 
 
 def parse(text: str) -> list[Shot]:
     """The shot cards in ``text``; empty when it is an ordinary prompt."""
-    lines = [line for line in (text or "").splitlines() if not _WRAPPER.match(line)]
+    lines = [line for line in _clean(text or "").splitlines() if not _WRAPPER.match(line)]
     strict = _read(lines)
     if not any(_FENCE.match(line) for line in lines):
         return strict
@@ -186,7 +220,7 @@ def looks_like_sheet(text: str) -> bool:
 def problems(shots: list[Shot]) -> list[str]:
     """What stops a shot list from running, one line per finding."""
     out = []
-    for shot in shots:
+    for index, shot in enumerate(shots):
         name = f"镜头 {shot.number}"
         if not shot.seconds:
             out.append(f"{name}：没有读到时长（Duration: 后面写秒数，例如 10s）")
@@ -194,6 +228,15 @@ def problems(shots: list[Shot]) -> list[str]:
             out.append(f"{name}：没有读到模式（Mode: 后面写 Ref2VA、I2VA 或 IA2V）")
         if not shot.prompt:
             out.append(f"{name}：没有读到提示词（H3 Prompt: 下面用 ```text 代码框放整段提示词）")
+        if shot.frame_reference:
+            if index == 0:
+                out.append(f"{name}：清单第一镜没有上一镜，承接画面应写「无」")
+            if shot.mode != REFERENCE:
+                out.append(f"{name}：上一镜尾帧参考仅支持参考模式 Ref2VA")
+            if shot.continues:
+                out.append(f"{name}：续写已保留上一镜画面，承接画面应写「无」")
+            if len(shot.pictures) >= 9 or len(shot.pictures + shot.videos + shot.audios) >= 12:
+                out.append(f"{name}：请为上一镜尾帧留出 1 张图片参考名额（图片最多 9 张、混合素材最多 12 份）")
         for kind, refs in (("Picture", shot.pictures), ("Video", shot.videos), ("Audio", shot.audios)):
             if [ref.tag for ref in refs] != [f"<{kind} {n}>" for n in range(1, len(refs) + 1)]:
                 out.append(f"{name}：References 里的 <{kind} N> 要从 1 开始连续编号")
