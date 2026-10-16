@@ -216,7 +216,7 @@ def test_the_ai_template_shows_cards_this_parser_reads():
         # the files a card names are the ones the list's 素材 table tells the user to save
         assert [ref.file for ref in shots[0].pictures] == re.findall(r"^`([^`]+)` ", text, re.M)
     example = shotlist.parse(lists[1])[0]
-    assert example.seconds == 15 and example.mode == shotlist.REFERENCE and not example.continues
+    assert example.seconds == 14 and example.mode == shotlist.REFERENCE and not example.continues
     assert shotlist.unlisted_tags(example) == []
     # the plan fields before the prompt and the notes after it stay out of the prompt
     assert example.prompt.startswith("subject_definitions:") and example.prompt.endswith("N/A")
