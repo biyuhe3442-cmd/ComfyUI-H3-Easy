@@ -1110,7 +1110,7 @@ class MediaPanel {
                 () => this.toast("浏览器不让复制，点「下载模板」把文件发给 AI", 5000));
         });
         const save = el("button", "h3e-fit", "下载模板");
-        save.title = "模板有近七万字，有的 AI 不让粘贴这么长：下载成文件，把文件发给它";
+        save.title = "模板有九万多字，有的 AI 不让粘贴这么长：下载成文件，把文件发给它";
         save.addEventListener("click", () => {
             const text = template();
             if (!text) return;
