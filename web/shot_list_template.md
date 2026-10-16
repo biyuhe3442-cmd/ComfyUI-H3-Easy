@@ -973,6 +973,7 @@ N/A
 
 - **参考板必须说明版式**（上面第一行那句），否则四个视图会变成四个人。普通单人图用第二行的短写法。
 - **`[Shot 1]` 不带时间码。** 之后每段 `[Shot N] At MM:SS.mmm, the camera cuts to …`，时间严格递增、小于时长。切过去后重新指认：标签 + 短称 + `from Shot 1` + 位置。回指时写 `from Shot 1`，不再用方括号。
+- **`retention_analysis` 里的 `[Shot N]` 是这张卡自己的段号**（这一次生成里的第几段），不是全片的镜头号；只列这张卡里真的出现的段，不把全片的出场表照抄到每张卡。
 - **保持程度只能用官方值：** `fully_preserved`（默认）；`partially_preserved`（部分特征按剧情变了，写清留什么变什么）；`weak_reference`（只借风格氛围）。音频用 `fully_copy`（整段原样做成片音轨）、`partially_copy`、`reference`（只参考音色）。保持分析里不写 (Sx)。
 - **任务类型**（summary 开头的方括号，可用 ` + ` 组合）：`reference generation`（图作身份参考）；`keyframe completion`（有图当首帧）；`audio reuse`（音频原样使用）；`audio reference`（只参考音色）。
 - **Ref2VA 不写** `the shot begins from <Picture N>`。
@@ -1064,6 +1065,7 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 - 声音来源按这一个 SHOT 里第一次出现语言人声的先后编 (S1)、(S2)…，和 Subject 编号无关。心声和旁白也有声音编号；只有完全不发出语言人声的角色才不编号。同一个角色的现场对白与心声沿用同一个声音编号和固定声线，不因转成心声就换一个配音角色。
 - 每个声音来源在本镜第一次发声时，都写第 9 节中文档案对应的完整英文声线，不能只写「他原来的声音」或笼统的 male voice；后续沿用 (Sx)。心声还写第 9 节的收音和向内语气。**每一段 `<d>` 前都标声音来源。** (Sx) 是本次生成内的声音编号，不是跨镜头锁定音色的配音演员编号；跨镜、跨章按中文声音身份与档案继承，本镜再映射编号。
 - `<d>` 里只有语言标签和原话：`<d>[Chinese] 你来晚了。</d>`。说话人、动作、语气都写在外面。
+- 不写 `in the voice of Lao Zhou` 这类说法：模型不知道这个人是什么声音，同一个人前后会变声。每个声音第一次开口写 `(S1) says in {第 9 节声音档案译成的完整英文声线}`，之后写 `(S1) says`。
 - 新写的停顿用分段和表演表达，不为拖时长随意加省略号；用户原话的标点保留。现场对白说完写合嘴；心声和旁白期间嘴唇一直闭合。
 - **语言人声必须有 `<d>` 原话，现场开口和心声分清。** 不写转述：「他告诉她毛病不在绳子上」「两人交谈」这种写法里没有可念的字，模型会让人物张着嘴乱说一通。没有任何语言人声才写 `nobody speaks and all lips stay closed`；有心声或旁白时写 `The visible characters remain silent on screen, with closed lips and still jaws; the audience-only voiceover remains audible.`，不能同时把整条声轨写成无人说话。
 - **台词挑不容易念错的字。** 模型念行话、专有名词、生僻字和多音字时容易走调（实测把「轴」念成「肘」、「立即掉头」念成「议集调头」、「县名」念成「签名」）。你自己写的台词用常见字、短句，一句不超过 15 个字。用户给的原话不改，但在注意事项里点出哪几个词可能念错，问他要不要换个说法。
@@ -1089,12 +1091,12 @@ The audience-only internal voice of <Subject 1> (S1), using a young adult male v
 - **没有负向提示词。** 「不要什么」写成画面事实，放在画面描述最后一两句：
 
 ```text
-Throughout the video, only <Subject 1> and <Subject 2> appear, each exactly once; <Subject 1> always stays on the left of the frame and <Subject 2> on the right; the sword stays in <Subject 1>'s right hand; their faces, hairstyles and costumes stay identical to their reference sheets, their hands keep natural anatomy, and no subtitles or captions appear.
+Throughout the video, only <Subject 1> and <Subject 2> appear, each exactly once; <Subject 1> always stays on the left of the frame and <Subject 2> on the right; the sword stays in <Subject 1>'s right hand; their faces, hairstyles and costumes stay identical to their reference sheets, their hands keep natural anatomy, no subtitles or captions appear, and no reference image appears as it is: no plain studio backdrop and no multi-view character sheet.
 ```
 
 至少覆盖：主要角色和必要背景人物各是谁，主要角色各出现一次；左右关系；脸发型服装和参考图一致；肢体正常；没有字幕；参考图不原样出现；没有台词的镜头写明没人说话。只有画面确实没有其他人时才写 only；有群演或角色背影时正面说明它们的状态。再加这一镜特有的（武器在哪只手、谁的嘴唇始终闭合）。
 
-- **参考图不能原样出现在片子里。** 每一段都写清它在场景里的哪儿：道具特写、手的特写也要带上背景里的一样东西（泥路、草、石壁、桌面）。只写「木轴的特写」，模型会把那张道具参考图连同它的灰色背景原样放出来；没有画面描述的镜头，模型会直接把角色参考板当成画面。Throughout 那一句里加上 `no reference image appears as it is: no plain studio backdrop and no multi-view character sheet`。
+- **参考图不能原样出现在片子里。** 每一段都写清它在场景里的哪儿：道具特写、手的特写也要带上背景里的一样东西（泥路、草、石壁、桌面）。只写「木轴的特写」，模型会把那张道具参考图连同它的灰色背景原样放出来；没有画面描述的镜头，模型会直接把角色参考板当成画面。每张卡的 Throughout 那一句里都要加上 `no reference image appears as it is: no plain studio backdrop and no multi-view character sheet`，一张都不能漏：实测漏了这一句，片子开头整整 1 秒就是角色的四视图设定图。
 
 - **长度：** 画面描述通常 350–500 英文词，段多动作密的 15 秒镜头会到 700 词上下。全文不超过 7000 字符。
 - **风格开头怎么写：** 定了画风的项目，第一句是那个画风的 `video` 行，第二句写这一场戏自己的光和颜色（`This scene takes place before dawn under cold blue skylight with fine falling snow, and deep red is the only strong color.`）。用户自己给了全部参考图、没定画风时，按图上看到的并成一句（`The target video is in a live-action Chinese xianxia fantasy film style, with cool overcast dusk light and a desaturated blue-grey palette.`）。风格句必须写明媒介、时代和类型；参考图是 3D 的，就不能写 live-action。
@@ -1186,7 +1188,7 @@ N/A
 - `SHOT 01` 单独占一行，编号从 01 连续排。**`SHOT` 加数字只用在每张卡的第一行**；清单里别的地方提到镜头，一律写「镜头 1」「镜头 2」。
 - `Duration:` 只写 4–15 的整数秒，例如 `10s`。用 H3-Easy 插件出片时最多 14 秒，见第 16 节。
 - `Mode:` 写 `Ref2VA`、`I2VA`、`FL2VA` 或 `IA2V`，后面可以带中文：`Ref2VA（参考模式：接角色图、场景图）`、`I2VA（首帧模式：从这张图开始）`、`FL2VA（首尾帧：从第 1 张图演到第 2 张图）`、`IA2V（图 + 音频驱动）`。FL2VA 的卡 References 第 1 张是首帧、第 2 张是尾帧。
-- `References:` 一行一个素材：标签、名字、反引号里的文件名，文件名就是素材表里的那个。音频、视频同样给文件名。编号是这一个镜头自己的，从 1 连续排，和 Prompt 里的 `<Picture N>` 一致。
+- `References:` 一行一个素材：标签、名字、反引号里的文件名，文件名就是素材表里的那个。音频、视频同样给文件名。编号是这一个镜头自己的，从 1 连续排，和 Prompt 里的 `<Picture N>` 一致。只接这一镜画面里会出现的人和场景（续写镜头开头 1.6 秒里在画面里的人也算）；这一镜没有的人不接，也不写进 subject_definitions，否则模型可能把他画出来。
 - `接上一镜:` 写 `续写` 或 `硬切`。用插件时，同一场戏的镜头默认续写（第 16 节）；不用插件时一律写 `硬切`。
 - **先写「导演意图」「分段」，再写 H3 Prompt。** 这两项就是你的镜头计划，不能跳过，也不能挪到 H3 Prompt 后面。
 - **「分段」是这一镜的中文版。** 用户看不懂英文，靠这一栏知道这个镜头会出什么、想改哪里。全部用中文写，不夹英文句子。H3 Prompt 是它的英文翻译：分段里没有的，Prompt 里不许多出来；Prompt 里的每个动作，分段里都找得到。
@@ -1271,7 +1273,7 @@ The target video is in a live-action Chinese xianxia fantasy film style, with co
 [Shot 2] At 00:05.000, the camera cuts to a medium close-up of <Subject 2>, the young woman in the ink-black robe from Shot 1, on the right of the frame facing left. She takes one deep breath, her brows draw down and her eyes stay fixed on her opponent off-screen to the left. She raises her right hand before her chest, index and middle fingers extended together; thin crimson threads of energy stream in from the air and wind into a tight, spinning lance of light above her fingertips, its glow reddening her face and lifting loose strands of her hair. The camera pushes in with small amplitude at slow speed.
 [Shot 3] At 00:07.500, the camera cuts to a side-on medium-wide shot as <Subject 2>, at the right edge of the frame, thrusts her palm forward and the lance launches with a sharp crack. The camera tracks the lance at fast speed as it streaks from right to left low across the platform, tearing a line of dust and stone chips out of the floor, toward the small white figure of <Subject 1> at the far left.
 [Shot 4] At 00:09.500, the camera cuts to a close-up of <Subject 1>, the young man in the white robe from Shot 1, on the left of the frame facing right. Crimson light climbs across his face; his pupils tighten, his jaw sets, and he plants his back foot. He raises the sword upright before his face in his right hand and presses two fingers of his left hand against the flat of the blade, and blue-white light runs up the steel from guard to tip. With a short, sharp exhale he sweeps the sword from left to right, and a wide crescent of blue-white light tears free of the blade toward the right of the frame.
-[Shot 5] At 00:12.000, the camera cuts to a high wide shot of the whole platform. The blue-white crescent from the left and the crimson lance from the right meet between the two fighters in a white flash and a deep, rolling boom. A ring of force bursts outward, shattering the stone slabs beneath it and pushing the clouds back from the platform's rim. <Subject 1>, on the left, is driven back onto one knee, the sword planted point-down in the stone in his right hand; <Subject 2>, on the right, slides back on both feet with one arm raised across her face, her robe and hair whipping in the blast. The camera holds a static shot as the dust thins and both lift their eyes toward each other. Throughout the video, only <Subject 1> and <Subject 2> appear, each exactly once; <Subject 1> stays on the left of the frame and <Subject 2> on the right; the sword stays in his right hand and she never holds a weapon; his energy is always blue-white and hers always crimson; their faces, hairstyles and costumes match their reference sheets, their hands keep natural anatomy, and no subtitles or captions appear.
+[Shot 5] At 00:12.000, the camera cuts to a high wide shot of the whole platform. The blue-white crescent from the left and the crimson lance from the right meet between the two fighters in a white flash and a deep, rolling boom. A ring of force bursts outward, shattering the stone slabs beneath it and pushing the clouds back from the platform's rim. <Subject 1>, on the left, is driven back onto one knee, the sword planted point-down in the stone in his right hand; <Subject 2>, on the right, slides back on both feet with one arm raised across her face, her robe and hair whipping in the blast. The camera holds a static shot as the dust thins and both lift their eyes toward each other. Throughout the video, only <Subject 1> and <Subject 2> appear, each exactly once; <Subject 1> stays on the left of the frame and <Subject 2> on the right; the sword stays in his right hand and she never holds a weapon; his energy is always blue-white and hers always crimson; their faces, hairstyles and costumes match their reference sheets, their hands keep natural anatomy, no subtitles or captions appear, and no reference image appears as it is: no plain studio backdrop and no multi-view character sheet.
 
 overall_soundscape:
 High mountain wind blows steadily across the open platform throughout. Robes snap in the air, boots scrape and slide on stone, both fighters breathe hard between exchanges, and loosened stone fragments clatter down after the final blast.
@@ -1308,6 +1310,7 @@ N/A
 - **续写（默认）：** 插件把上一镜成片的最后约 1.6 秒原样当作这个镜头的开头，接着往下生成，画面、人物状态（伤口、衣服、手里的东西、站位）和声音都连着。同一场戏、时间连着的镜头一律写 `接上一镜: 续写`。换机位、换景别不是硬切的理由：在续写镜头里面切，`[Shot 1]` 写重叠的 1.625 秒，`[Shot 2] At 00:01.625, the camera cuts to …` 开始新机位。
 - **硬切只用在这几处：** 清单第一镜；换了场景或跳了时间（第二天、几年后、回忆）；这一镜和上一镜模式不同（续写只在两个 Ref2VA 镜头之间，I2VA、FL2VA、IA2V 前后都只能硬切）。硬切的镜头单独生成，不传递上一镜画面，写 `承接画面: 无`。用户说「全部续写」时，换场景也续写：重叠的 1.625 秒照写上一镜的结尾，然后切到新场景。
 - 续写镜头的 Prompt：H3 看到的这一段 = 上一镜最后 39 帧（准确是 1.625 秒，已经定死）+ 新内容。`[Shot 1]` 开头描述这段重叠上下文已经发生的画面，1.625 秒之后才安排新动作和新台词；不能把上一镜最后一帧的姿态当成整个重叠区的起点。新内容的切镜时间也加 1.625 秒。分批的首镜是硬切，只能继承剧情状态，不能宣称自动保留上一份的画面和声音。
+- **后面要被续写的镜头，最后 2 秒不安排台词和心声。** 续写会把这一镜最后 1.6 秒的声音原样带进下一镜：台词说到镜头最后，下一镜会接着往下「说」出没写的话。台词说完至少留 2 秒的反应、动作或环境声再结束这一镜。
 
 **同场硬切的画面承接：** 同一场景、时间连着却不能续写时（例如上一镜是首帧模式），可写 `接上一镜: 硬切` 和 `承接画面: 上一镜尾帧参考`。前提是上一镜的最后一帧拍到了这一镜的地方，而且画面里有这一镜的人；上一镜结束在别人的特写、空镜或另一个地方时写 `承接画面: 无`，那一帧只会把别人或别处带进来。插件会自动从上一镜已保存的视频中取最后一帧，追加到本卡原有图片之后作为空间、坐站姿态、持物、伤势的参考；原图片编号不变，新增编号由插件填写，不在 References 虚构图片文件，也不要求用户手动抽帧或上传。人物脸和服装仍以原身份图为准；新镜头可按指定机位拍摄，这不是强制首帧，也不保证完全不漂移。只在本卡为 Ref2VA 时支持，为它留出 1 张图片和 1 份混合素材名额（本卡外部图片最多 8 张，外部混合素材最多 11 份）。清单第一镜、新场景、时间跳跃和真正换到另一组人的镜头写 `承接画面: 无`；续写已经传画面，也写无。上一镜画面不合格应先重抽上一镜，使用它的后续镜头会随依赖重新生成；独立新场景不因此重抽。
 
@@ -1347,13 +1350,14 @@ N/A
 2. 每张卡依次有：SHOT 编号、Duration、Mode、References（每行用反引号写文件名）、接上一镜、承接画面、导演意图、分段、H3 Prompt、注意事项；最后一张卡也写完整了。
 3. 「分段」全是中文，写的就是 H3 Prompt 里的内容；第一段有开场状态，最后一段有结束状态；每个人在画面哪一侧只写一种；光线只写这一镜此刻的。
 4. H3 Prompt 是英文，参考模式六段，首帧和首尾帧模式三段（首尾帧第一行是第 12.2 节的官方对齐句，秒数对）；顺序正确；位置、坐站、朝向、道具在哪只手都写进了英文正文。
-5. 每句台词逐字数过、按第 9 节算过时间，所在的段放得下；每段 `<d>` 前有说话人编号，第一次发声写了完整声线；心声和旁白用 `says in an off-screen voiceover`，出镜人物闭嘴；没有语言人声的镜头写明没人说话；同性别两人对话已拆成每镜一个人开口，同镜对话来回不超过 6 句。
+5. 每句台词逐字数过、按第 9 节算过时间，所在的段放得下；每段 `<d>` 前有说话人编号，第一次发声写了完整声线；心声和旁白用 `says in an off-screen voiceover`，出镜人物闭嘴；没有 `in the voice of 某某` 这种写法；没有语言人声的镜头写明没人说话；同性别两人对话已拆成每镜一个人开口，同镜对话来回不超过 6 句。
 6. 相邻镜头接得上：位置、坐站、朝向、手里的东西、伤势和人物知道的事，都从上一镜结束时接着来；没有凭空出现、消失，没有重演已经发生的动作。
 7. 原文的事件、原台词和必要前提都拍到了；「本份覆盖」「待拍」写的是实情，没拍完不写「待拍：无」；人物没有提前知道还没揭露的事。
-8. References 每类编号从 1 连续，和提示词里的标签一致；画面里出现的主要角色都接了参考图；结尾的 only 没有排除画面里的背景人物。
+8. References 每类编号从 1 连续，和提示词里的标签一致；画面里出现的主要角色都接了参考图，这一镜不出现的人没有接；`retention_analysis` 的段号是这张卡自己的；结尾的 only 没有排除画面里的背景人物。
 9. 每张场景图的时段、天气、光线和用到它的镜头一致，不一致的已在素材表里列出要另出的版本；出图提示词是中文的，每个框自己就完整。
 10. 用插件时：每个镜头 Duration 不超过 14 秒（参考图 6 张及以上不超过 13 秒）；同一场戏、时间连着的镜头写了续写，硬切只用在第一镜、换场景、跳时间或模式不同时；续写镜头的 `[Shot 1]` 写的是重叠的 1.625 秒，新动作和新台词从 1.625 秒后开始；「承接画面：上一镜尾帧参考」只用在不能续写、上一镜最后一帧拍到同一个地方、而且有本镜的人时。
-11. 整章汇总时没有中途停下要用户说「继续」；除了中文计划、出图提示词和第 13 节的最后一句提示，没有多余的分析和提问。
+11. 每张卡的画面描述最后都有 Throughout the video 那句，里面写了 `no reference image appears as it is: no plain studio backdrop and no multi-view character sheet`；后面要被续写的镜头，最后 2 秒没有台词和心声。
+12. 整章汇总时没有中途停下要用户说「继续」；除了中文计划、出图提示词和第 13 节的最后一句提示，没有多余的分析和提问。
 
 **收到模板后的第一条回复：**
 
