@@ -62,7 +62,7 @@ References:
 承接画面: 无
 导演意图：（1–3 句：这一镜讲什么，怎么拍）
 分段：
-- 0 秒起 · （全用中文：机位和景别 · 谁在画面哪一侧 · 开场时的位置、坐站、朝向、手里的东西 · 发生了什么、说了哪句 · 听得到什么）
+- 0 秒起 · （全用中文：机位和景别 · 谁在画面哪一侧 · 开场时的位置、坐站、朝向、手里的东西 · 发生了什么，脸和身体怎么变，用什么语气说了哪句 · 听得到什么）
 - 3 秒起 · （下一段；最后一段写结束时的状态）
 H3 Prompt:
 subject_definitions:
@@ -78,7 +78,7 @@ retention_analysis:
 
 detailed_description:
 {画风的 video 句} {这场戏此刻的光和颜色}
-[Shot 1] {景别和机位}. <Subject 1>, {短称}, {画面位置、朝向、姿态、手里的东西}. {动作}. <Subject 1> (S1) says in {声音档案译成的完整英文声线}: <d>[Chinese] 原台词。</d> His lips close.
+[Shot 1] {景别和机位}. <Subject 1>, {短称}, {画面位置、朝向、姿态、手里的东西}. {触发和动作；近景写眼神、眉、嘴、呼吸，远景写肩、手、重心}. <Subject 1> (S1) says in {声音档案译成的完整英文声线}, {这一句的语气：情绪、音量、快慢、停顿}: <d>[Chinese] 原台词。</d> His lips close; {说完后的眼神或动作}.
 [Shot 2] At 00:03.000, the camera cuts to {景别} of <Subject 1>, {短称} from Shot 1, {位置和朝向}. {动作和结束时的状态}. Throughout the video, only <Subject 1> appears, no subtitles or captions appear, and no reference image appears as it is: no plain studio backdrop and no multi-view character sheet.
 
 overall_soundscape:
@@ -97,11 +97,12 @@ N/A
 1. 只用范本里的字段名：`SHOT 01`、`Duration:`、`Mode:`、`References:`、`接上一镜:`、`承接画面:`、`导演意图：`、`分段：`、`H3 Prompt:`、`注意事项：`。不写成「时长」「模式」「镜头编号」，不加 `##` 标题、不加粗字段名、不用表格；清单里别处提到镜头写「镜头 1」，不写「SHOT 1」。
 2. `References:` 每行一个 `<Picture N> 名字 `文件名``，只接这一镜画面里出现的人和场景。`subject_definitions` 里人和场景都写成 `<Subject N> is …, as shown in <Picture N>`；角色图是多视图设定板时，每个角色都写范本里那句版式说明，不只写第一个人。
 3. `H3 Prompt:` 下面参考模式就是范本里这六段，首帧模式按第 12.2 节的三段；段名照抄，内容全用英文。不写 `Use <Picture 1> as …`、`Ambient sound:`、`Dialogue language:` 这类自创写法，不发明 `<vo>` 之类的标签。
-4. 台词写成 `(S1) says in {完整英文声线}: <d>[Chinese] 原话</d>`；心声、旁白写 `says in an off-screen voiceover`（第 12.4 节）。两个同性别的人对话，拆成每个镜头只有一个人开口。
-5. 同一场戏、时间连着的下一个镜头写 `接上一镜: 续写`：它的 `[Shot 1]` 写重叠的 1.625 秒（`For the first 1.625 seconds, the video continues the previous moment: …`），`[Shot 2] At 00:01.625, the camera cuts to …` 开始新内容。被续写的镜头最后 2 秒不安排台词。
-6. 每张卡画面描述的最后一句都是 `Throughout the video, …`，并逐字带上 `no reference image appears as it is: no plain studio backdrop and no multi-view character sheet`，不换成自己的说法。
-7. `Duration:` 写 4–14 的整数秒（参考图 6 张及以上最多 13 秒）；续写镜头的时长档位见第 16 节。
-8. 整份清单放进一个 ```markdown 代码框；框外只写中文计划、出图提示词和第 13 节规定的最后一句提示，结尾不问「要不要我继续」。
+4. 台词写成 `(S1) says in {完整英文声线}, {这一句的语气}: <d>[Chinese] 原话</d>`。声线照声音档案逐字抄，同一个人每次都一样；语气每句现写：情绪、音量、快慢、停顿，例如 `sharp and loud, fast, biting off the last word`。声线里的惯常语速不代表这一句，拍桌子吼出来的话不能写成平稳的日常语速。同一个声音再开口写 `(S1) says, {这一句的语气}:`。`<d>` 里的原话和原标点一字不改，不为控制语气加或改标点；剧情里括号中的提示（如「（冷笑）」）写到 `<d>` 外面。心声、旁白写 `says in an off-screen voiceover`（第 12.4 节）。两个同性别的人对话，拆成每个镜头只有一个人开口。
+5. 情绪写成看得见的脸和身体（第 8 节）：先写触发，再写反应；近景写眼神、眉、嘴、呼吸，远景写肩、手、重心；听的人也写反应。不写 sad、angry、nervous 这类情绪词，H3 只会画写出来的动作。
+6. 同一场戏、时间连着的下一个镜头写 `接上一镜: 续写`：它的 `[Shot 1]` 写重叠的 1.625 秒（`For the first 1.625 seconds, the video continues the previous moment: …`），`[Shot 2] At 00:01.625, the camera cuts to …` 开始新内容。被续写的镜头最后 2 秒不安排台词。
+7. 每张卡画面描述的最后一句都是 `Throughout the video, …`，并逐字带上 `no reference image appears as it is: no plain studio backdrop and no multi-view character sheet`，不换成自己的说法。
+8. `Duration:` 写 4–14 的整数秒（参考图 6 张及以上最多 13 秒）；续写镜头的时长档位见第 16 节。
+9. 整份清单放进一个 ```markdown 代码框；框外只写中文计划、出图提示词和第 13 节规定的最后一句提示，结尾不问「要不要我继续」。
 
 ## 先看这一段
 
@@ -1147,14 +1148,14 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 
 - 声音来源按这一个 SHOT 里第一次出现语言人声的先后编 (S1)、(S2)…，和 Subject 编号无关。心声和旁白也有声音编号；只有完全不发出语言人声的角色才不编号。同一个角色的现场对白与心声沿用同一个声音编号和固定声线，不因转成心声就换一个配音角色。
 - 每个声音来源在本镜第一次发声时，都写第 9 节中文档案对应的完整英文声线，不能只写「他原来的声音」或笼统的 male voice；后续沿用 (Sx)。心声还写第 9 节的收音和向内语气。**每一段 `<d>` 前都标声音来源。** (Sx) 是本次生成内的声音编号，不是跨镜头锁定音色的配音演员编号；跨镜、跨章按中文声音身份与档案继承，本镜再映射编号。
-- `<d>` 里只有语言标签和原话：`<d>[Chinese] 你来晚了。</d>`。说话人、动作、语气都写在外面。
-- 不写 `in the voice of Lao Zhou` 这类说法：模型不知道这个人是什么声音，同一个人前后会变声。每个声音第一次开口写 `(S1) says in {第 9 节声音档案译成的完整英文声线}`，之后写 `(S1) says`。
+- `<d>` 里只有语言标签和原话，字和标点一字不改，不为控制语气加或改标点：`<d>[Chinese] 你来晚了。</d>`。说话人、动作、语气都写在外面，剧情里括号中的提示（如「（冷笑）」）也写在外面。
+- 不写 `in the voice of Lao Zhou` 这类说法：模型不知道这个人是什么声音，同一个人前后会变声。每个声音第一次开口写 `(S1) says in {第 9 节声音档案译成的完整英文声线}, {这一句的语气}`，之后写 `(S1) says, {这一句的语气}`：声线每次一样，语气（情绪、音量、快慢、停顿）每句现写。
 - 新写的停顿用分段和表演表达，不为拖时长随意加省略号；用户原话的标点保留。现场对白说完写合嘴；心声和旁白期间嘴唇一直闭合。
 - **语言人声必须有 `<d>` 原话，现场开口和心声分清。** 不写转述：「他告诉她毛病不在绳子上」「两人交谈」这种写法里没有可念的字，模型会让人物张着嘴乱说一通。没有任何语言人声才写 `nobody speaks and all lips stay closed`；有心声或旁白时写 `The visible characters remain silent on screen, with closed lips and still jaws; the audience-only voiceover remains audible.`，不能同时把整条声轨写成无人说话。
 - **台词挑不容易念错的字。** 模型念行话、专有名词、生僻字和多音字时容易走调（实测把「轴」念成「肘」、「立即掉头」念成「议集调头」、「县名」念成「签名」）。你自己写的台词用常见字、短句，一句不超过 15 个字。用户给的原话不改，但在注意事项里点出哪几个词可能念错，问他要不要换个说法。
 
 ```text
-<Subject 2> (S1) says in a cool, low young female voice with an unhurried delivery in standard Mandarin: <d>[Chinese] 你来晚了。</d> Her lips close and she does not turn around.
+<Subject 2> (S1) says in a cool, low young female voice in standard Mandarin, quietly and without hurry, after a short pause: <d>[Chinese] 你来晚了。</d> Her lips close and she does not turn around.
 ```
 
 - **H3 官方画外音句式保留。** 每句心声和旁白都用原样短语 `says in an off-screen voiceover`，每个 `</d>` 后立即说明对应出镜人物嘴唇闭合，不只在镜尾补一次。不发明 `<inner_voice>` 等标签，不把语言内容写进 `non_diegetic_music`。这是官方格式；第 9 节的收音、向内语气和表演约束是导演补充，不能承诺生成必定遵守。
@@ -1391,8 +1392,8 @@ N/A
 1. 清单在一个 ```markdown 代码框里（或一个真实的完整文件）；开头有标题、交付方式、画幅、时代和画风、我替你定的、素材表；有人说话时有声音档案。
 2. 每张卡依次有：SHOT 编号、Duration、Mode、References（每行用反引号写文件名）、接上一镜、承接画面、导演意图、分段、H3 Prompt、注意事项；最后一张卡也写完整了。
 3. 「分段」全是中文，写的就是 H3 Prompt 里的内容；第一段有开场状态，最后一段有结束状态；每个人在画面哪一侧只写一种；光线只写这一镜此刻的。
-4. H3 Prompt 是英文，参考模式六段，首帧和首尾帧模式三段（首尾帧第一行是第 12.2 节的官方对齐句，秒数对）；顺序正确；位置、坐站、朝向、道具在哪只手都写进了英文正文。
-5. 每句台词逐字数过、按第 9 节算过时间，所在的段放得下；每段 `<d>` 前有说话人编号，第一次发声写了完整声线；心声和旁白用 `says in an off-screen voiceover`，出镜人物闭嘴；没有 `in the voice of 某某` 这种写法；没有语言人声的镜头写明没人说话；同性别两人对话已拆成每镜一个人开口，同镜对话来回不超过 6 句。
+4. H3 Prompt 是英文，参考模式六段，首帧和首尾帧模式三段（首尾帧第一行是第 12.2 节的官方对齐句，秒数对）；顺序正确；位置、坐站、朝向、道具在哪只手都写进了英文正文；情绪写成了看得见的脸和身体，没有 sad、angry 这类词。
+5. 每句台词逐字数过、按第 9 节算过时间，所在的段放得下；每段 `<d>` 前有说话人编号，第一次发声写了完整声线，每句都写了这一句的语气，`<d>` 里的字和标点和原话一样；心声和旁白用 `says in an off-screen voiceover`，出镜人物闭嘴；没有 `in the voice of 某某` 这种写法；没有语言人声的镜头写明没人说话；同性别两人对话已拆成每镜一个人开口，同镜对话来回不超过 6 句。
 6. 相邻镜头接得上：位置、坐站、朝向、手里的东西、伤势和人物知道的事，都从上一镜结束时接着来；没有凭空出现、消失，没有重演已经发生的动作。
 7. 原文的事件、原台词和必要前提都拍到了；「本份覆盖」「待拍」写的是实情，没拍完不写「待拍：无」；人物没有提前知道还没揭露的事。
 8. References 每类编号从 1 连续，和提示词里的标签一致；画面里出现的主要角色都接了参考图，这一镜不出现的人没有接；`retention_analysis` 的段号是这张卡自己的；结尾的 only 没有排除画面里的背景人物。
